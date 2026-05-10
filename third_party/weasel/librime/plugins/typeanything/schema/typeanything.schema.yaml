@@ -62,10 +62,14 @@ speller:
 translator:
   dictionary: luna_pinyin
   prism: typeanything
-  enable_user_dict: true
-  # 接受 abbrev/derive 产生的部分匹配
-  enable_completion: true
-  # 让简写也参与候选排序，否则匹配但权重过低看不到
+  # ----- User-dictionary learning -----
+  # Rime accumulates per-user frequency on every commit. After a few hundred
+  # commits the candidate order reflects the user's typing habits.
+  enable_user_dict: true     # save commits to luna_pinyin.userdb
+  enable_encoder: true       # encode multi-char compositions as new phrases
+  enable_sentence: true      # compose whole sentence as a single candidate
+  enable_completion: true    # surface abbrev / partial matches
+  initial_quality: 1.2       # boost user_dict over base dict slightly
   preedit_format:
     - xform/([nljqxy])v/$1ü/
 

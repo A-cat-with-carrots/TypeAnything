@@ -205,69 +205,6 @@ std::string WinHttpPost(const std::wstring& host,
   return result;
 }
 
-// --- Translation cache (persistent TSV at %APPDATA%\\Rime\\typeanything_cache.tsv) ---
-// Lookup avoids re-calling DeepSeek for (lang, chinese) pairs the user has
-// translated before. Append-only TSV with last-match-wins semantics.
-
-std::wstring CachePath() {
-  wchar_t ad[MAX_PATH] = {0};
-  if (FAILED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, ad))) return L"";
-  return std::wstring(ad) + L"\\Rime\\typeanything_cache.tsv";
-}
-
-std::string SanitizeCache(std::string s) {
-  for (auto& c : s) {
-    if (c == '\n' || c == '\r' || c == '\t') c = ' ';
-  }
-  return s;
-}
-
-std::string LookupCache(const std::string& lang, const std::string& chinese) {
-  std::wstring p = CachePath();
-  if (p.empty()) return "";
-  HANDLE h = CreateFileW(p.c_str(), GENERIC_READ,
-                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-  if (h == INVALID_HANDLE_VALUE) return "";
-  std::string accum;
-  std::string buf;
-  buf.resize(8192);
-  DWORD got = 0;
-  while (ReadFile(h, &buf[0], (DWORD)buf.size(), &got, NULL) && got > 0) {
-    accum.append(buf.data(), got);
-  }
-  CloseHandle(h);
-  std::string key = SanitizeCache(lang) + "\t" + SanitizeCache(chinese) + "\t";
-  std::string match;
-  size_t start = 0;
-  while (start < accum.size()) {
-    size_t eol = accum.find('\n', start);
-    if (eol == std::string::npos) eol = accum.size();
-    if (eol - start >= key.size() &&
-        accum.compare(start, key.size(), key) == 0) {
-      match = accum.substr(start + key.size(), eol - start - key.size());
-    }
-    start = eol + 1;
-  }
-  return match;
-}
-
-void SaveCache(const std::string& lang, const std::string& chinese,
-               const std::string& translation) {
-  std::wstring p = CachePath();
-  if (p.empty()) return;
-  HANDLE h = CreateFileW(p.c_str(), FILE_APPEND_DATA,
-                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-                         OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-  if (h == INVALID_HANDLE_VALUE) return;
-  std::string entry = SanitizeCache(lang) + "\t" +
-                      SanitizeCache(chinese) + "\t" +
-                      SanitizeCache(translation) + "\n";
-  DWORD wrote = 0;
-  WriteFile(h, entry.data(), (DWORD)entry.size(), &wrote, NULL);
-  CloseHandle(h);
-}
-
 
 size_t Utf8CodePointCount(const std::string& s) {
   size_t count = 0;
@@ -515,15 +452,9 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
             << JsonEscape(chinese) << "\"}"
             << "]}";
 
-    // Cache lookup first — skip API call when (lang, chinese) was translated before.
-    std::string english = LookupCache(lang, chinese);
-
-    std::string body;
-    if (english.empty()) {
-      body = WinHttpPost(Utf8ToWide(endpoint),
-                         Utf8ToWide(path),
-                         api_key, payload.str());
-    }
+    std::string body = WinHttpPost(Utf8ToWide(endpoint),
+                                   Utf8ToWide(path),
+                                   api_key, payload.str());
 
     // If user dispatched another translation since we started, abort.
     if (this_id != request_id_.load()) {
@@ -531,7 +462,8 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
       return;
     }
 
-    if (english.empty() && !body.empty()) english = ExtractContent(body);
+    std::string english;
+    if (!body.empty()) english = ExtractContent(body);
     while (!english.empty() &&
            (english.back() == ' ' || english.back() == '\n' ||
             english.back() == '\r' || english.back() == '\t')) {
@@ -544,11 +476,6 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
                  << "; raw body bytes: " << body.size();
       suppress_capture_.store(false);
       return;
-    }
-
-    // Persist only fresh-from-API results.
-    if (!body.empty() && !english.empty()) {
-      SaveCache(lang, chinese, english);
     }
 
     if (SetClipboardUtf8(english)) {

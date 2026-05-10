@@ -24,7 +24,7 @@ nihao  → [Space 选「你好」] → [Enter] → Hello
 - **TSF 级集成**（Text Services Framework）— 不是 IME 上面套层 hook，是 Windows 输入法本体，微信不会闪鬼影光标
 - **后台异步 LLM**（DeepSeek `deepseek-chat`，p99 ~1s）— 中文先落地，翻译来了通过 SendInput VK_BACK + clipboard 静默替换
 - **专业级翻译 prompt**（5 条 rule：避免直译/保留语气/技术术语/俚语自然化/语境推断）
-- **翻译缓存**（重复输入相同中文 → 0 API 调用、~50ms 出结果）
+- **拼音→汉字 自学习**（Rime user_dict：每次选词记频次，越用越懂你的常用词）
 - **标点直输**（无候选窗，对齐 Microsoft IME 行为）
 
 不是「IME 翻译插件」。是 **fork 整个 Weasel C++ TSF 框架 + librime 引擎，加自研 Rime processor 插件 + 自研 30 国语言切换托盘菜单 + 神仙鱼品牌图标 + 专业翻译 prompt** 的合体输入法产品。
@@ -287,9 +287,13 @@ cd ..
   - 标准语言：`English` / `日本語` / `한국어` / `Français` / `粵語`
   - 风格化：`学术英语` / `商务日语` / `中二风格的日语` / `网络流行语` / `古汉语风格`
   - 创造性：`Klingon battle prose` / `Spanish chilango` / `火星文` / 任何描述
-- **翻译缓存**：`%APPDATA%\Rime	ypeanything_cache.tsv` 记录 (lang, chinese) → translation
-  - 重复输入相同中文 + 同目标语言 → 直接 paste 缓存，0 API 调用，~50ms 出结果
-  - TSV append-only，last-match-wins 语义；用户用得越多越快
+- **拼音→汉字 自学习**：Rime `user_dict` 增强
+  - `enable_user_dict: true` — 选词频次持久化到 `luna_pinyin.userdb`
+  - `enable_encoder: true` — 多字 composition 自动编码为新词组
+  - `enable_sentence: true` — 整句候选浮上来（长输入更顺）
+  - `initial_quality: 1.2` — user_dict 权重高于 base dict
+  - 用得越多，候选顺序越贴合自己的常用词
+  - 翻译走实时 LLM，不缓存（每次都让 DeepSeek 重做以保证质量+风格切换即时生效）
 - **标点直输**：覆盖 punctuator preset，单候选直接出，no popup（对齐 Microsoft IME 行为）
   - ascii_mode=false (中文): `,` → `，` / `.` → `。` / `(` → `（` / `\` → `、` / `'` 配对 / etc.
   - ascii_mode=true (英文): 全 ASCII 半角直输
