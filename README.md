@@ -1,7 +1,7 @@
-# TypeAnything
+# 输入法大王 / TypeAnything
 
 > **打拼音，落地任何语言、任何圈层、任何风格。**
-> Type Chinese pinyin → press Enter → DeepSeek rewrites it as English / 留学生式中英夹杂 / 金融式说话 / 学术体 / 港片台词 / Klingon — anything you can describe.
+> Type Chinese pinyin → press Enter → AI rewrites it as English / 留学生式中英夹杂 / 金融式说话 / 学术体 / 港片台词 / Klingon — anything you can describe.
 
 [![IME](https://img.shields.io/badge/Windows-IME-blueviolet)](https://learn.microsoft.com/en-us/windows/win32/tsf/text-services-framework)
 [![Built on](https://img.shields.io/badge/Built%20on-Weasel%20%2B%20librime-orange)](https://github.com/rime/weasel)
@@ -10,7 +10,7 @@
 
 ---
 
-## 这不仅是翻译输入法。更是**风格化输入法**。
+## 这不仅是翻译输入法。更是**输入法大王**。
 
 你打中文：
 
@@ -31,13 +31,13 @@
 | `东北话` | 咱这项目最近数据贼难看，老板让我下周必须憋出个明明白白的方案来。 |
 | `港片黑帮` | 我哋最近条 case 啲数啱啱睇唔过眼，大佬话下个礼拜要有个交代。 |
 
-不止翻译。**你说啥风格，DeepSeek 就给你啥风格。**
+不止翻译。**你说啥风格，AI 就给你啥风格。**
 
 ---
 
 ## 它是什么
 
-Windows OS 级输入法。你打拼音 → 空格选词 → Enter → 中文当场被 DeepSeek 改写为目标语言或风格 → 在**任意 Windows 应用**（微信 / Word / Chrome / VSCode / 飞书 / Discord / Slack）原地替换。
+Windows OS 级输入法。你打拼音 → 空格选词 → Enter → 中文当场被 AI 改写为目标语言或风格 → 在**任意 Windows 应用**（微信 / Word / Chrome / VSCode / 飞书 / Discord / Slack）原地替换。
 
 切换 target 不重启：托盘鱼图标右键 → **切换语言** → 弹框 → 输入任何描述。
 
@@ -51,7 +51,7 @@ Windows OS 级输入法。你打拼音 → 空格选词 → Enter → 中文当�
 English / 日本語 / 한국어 / Français / Deutsch
 Español / Italiano / Português / Русский / العربية
 Tiếng Việt / ไทย / Türkçe / 粵語
-... 任何 DeepSeek 认识的语言
+... 任何 AI 能识别的语言
 ```
 
 ### 🎭 圈层风格 — 加入特定群体的说话方式
@@ -76,7 +76,7 @@ Tiếng Việt / ไทย / Türkçe / 粵語
 B站弹幕体 / 抖音口播体 / 朋友圈鸡汤体 / 营销号体
 ```
 
-### 🪐 虚构 / 自定义 — DeepSeek 自由发挥
+### 🪐 虚构 / 自定义 — AI 自由发挥
 
 ```
 像鲁迅一样的英语 / 像周杰伦歌词 / 港片黑帮台词
@@ -84,7 +84,7 @@ B站弹幕体 / 抖音口播体 / 朋友圈鸡汤体 / 营销号体
 Klingon battle prose / 火星文 / Spanish chilango / Cockney slang
 ```
 
-**你能用一句话描述的口吻，TypeAnything 就能给你那个口吻。**
+**你能用一句话描述的口吻，输入法大王 就能给你那个口吻。**
 
 ---
 
@@ -94,7 +94,7 @@ Klingon battle prose / 火星文 / Spanish chilango / Cockney slang
 
 | 通病 | TypeAnything 改进 |
 |------|--------------------|
-| 翻译插件只做语种切换（中→英） | **风格化**：圈层 / 时代 / 文体 / 自定义 任意切 |
+| 翻译插件只做语种切换（中→英） | **AI 改写**：语种 / 圈层 / 时代 / 文体 / 自定义任意切 |
 | 浏览器插件方案只在 web 内有效 | **OS 级 TSF**，微信/Word/任何原生 app 都生效 |
 | 「划词翻译」要先打中文再选 → 中断思路 | **打字过程内联**，Enter 当场替换，零额外动作 |
 | sidecar / hook 方案微信里出现幽灵光标 | **直接 fork Weasel TSF**，框架级集成无 hook 冲突 |
@@ -121,10 +121,11 @@ Klingon battle prose / 火星文 / Spanish chilango / Cockney slang
 ┌─ 后台异步 ──────────────────────────────────────────┐
 │  spawn worker thread (Chinese 仍可见 ~1s)           │
 │   ↓                                                 │
-│  WinHttpPost → api.deepseek.com/v1/chat/completions │
+│  WinHttpPost → AI provider chat/completions API     │
 │   payload = professional translator prompt          │
 │           + 你的目标 (任意自然语言描述)              │
 │           + 「你好」                                 │
+│   （默认连 DeepSeek，可在 schema yaml 改 OpenAI/...）│
 │   target_lang ← %APPDATA%\Rime\typeanything_       │
 │                  lang.txt (托盘菜单写入)             │
 └─────────────────────────────────────────────────────┘
@@ -148,7 +149,7 @@ Klingon battle prose / 火星文 / Spanish chilango / Cockney slang
 
 - Windows 10 / 11
 - Weasel 0.17.4 已装：[官方下载](https://rime.im/download/)（IME 框架）
-- DeepSeek API key（[注册](https://platform.deepseek.com/) → 创建 key）
+- AI API key — 默认走 [DeepSeek](https://platform.deepseek.com/)（性价比 + 中文质量好），可换 OpenAI / Anthropic / 任意 OpenAI-compatible API
 
 ### 一键安装（推荐）
 
@@ -197,7 +198,7 @@ cd TypeAnything
 ↓
 %APPDATA%\Rime\typeanything_lang.txt 第一行更新
 ↓
-下次 Enter 触发翻译时 processor 重读文件 → DeepSeek 按新描述翻译
+下次 Enter 触发翻译时 processor 重读文件 → AI 按新描述翻译
 ```
 
 弹框示例描述：
@@ -272,18 +273,20 @@ TypeAnything/
 
 ### 改 LLM provider
 
+默认连 DeepSeek（中文质量好 + 价格低）。每个用户用**自己的 API key 直连**，没有 shared backend / 中转代理 — 你的输入只发到你填的那个 API endpoint。
+
 `typeanything.schema.yaml`：
 
 ```yaml
 typeanything:
-  api_key: "sk-..."
-  model: deepseek-chat
-  host: api.deepseek.com
-  path: /v1/chat/completions
+  api_key: "sk-..."          # 你自己的 API key
+  model: deepseek-chat       # → "gpt-4o" / "moonshot-v1-8k" / 任意
+  host: api.deepseek.com     # → "api.openai.com" / 任意 OpenAI-compatible host
+  path: /v1/chat/completions # OpenAI Chat Completions 兼容协议
   temperature: 0.3
 ```
 
-OpenAI / Anthropic 兼容协议直接改 host + path。Anthropic `/v1/messages` 协议不同需改 processor 请求 builder。
+**支持任意 OpenAI Chat Completions 兼容 API**：DeepSeek / OpenAI / Moonshot / 阶跃 / 智谱 / 任何 self-hosted vLLM / Ollama 等。Anthropic `/v1/messages` 协议不同，需改 processor 的请求 builder。
 
 ### 改翻译 prompt
 
@@ -337,7 +340,7 @@ cd ..
 ## 版本历史
 
 ### v0.4.x（当前）
-- **任意自然语言目标** — 切换语言改 PowerShell InputBox，user 输入任意 DeepSeek 能理解的描述
+- **任意自然语言目标** — 切换语言改 PowerShell InputBox，user 输入任意 AI 能理解的描述
   - 4 大类：语种 / 圈层风格 / 场景文体 / 虚构自定义
   - **金融式说话 / 留学生式说话 / 互联网黑话** 等圈层风格是核心卖点
 - **拼音→汉字 自学习强化** — Rime user_dict 增强（encoder/sentence/completion/initial_quality）
@@ -364,7 +367,7 @@ cd ..
 重点方向：
 - **macOS port** — 用 squirrel 框架，复用我们的 typeanything plugin
 - **Linux port** — 用 ibus-rime 或 fcitx-rime
-- **流式翻译** — DeepSeek streaming API → 边翻边显示
+- **流式翻译** — LLM streaming API → 边翻边显示
 - **错误 toast** — API 失败时托盘气泡提示
 - **风格 preset 库** — 内建几十种圈层风格 prompt template
 - **离线 fallback** — 本地小 model 兜底
@@ -377,7 +380,7 @@ PR 前请阅 `third_party/weasel/librime/plugins/typeanything/src/typeanything_p
 
 - [rime/weasel](https://github.com/rime/weasel) — Windows TSF 框架，我们 fork 自此
 - [rime/librime](https://github.com/rime/librime) — Rime 输入法引擎
-- [DeepSeek](https://platform.deepseek.com/) — LLM provider，性价比 + 中文质量
+- [DeepSeek](https://platform.deepseek.com/) — 默认 LLM provider（性价比高、中文好），用户可在 schema yaml 切到任意 OpenAI-compatible API
 - 神仙鱼 logo 来自 [hrdai.com](https://hrdai.com) 品牌系统
 
 ---

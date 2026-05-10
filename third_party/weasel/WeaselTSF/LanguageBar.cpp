@@ -348,7 +348,7 @@ void show_lang_picker_in_client(HWND /*owner*/) {
   // Spawn a tiny PowerShell that pops Microsoft.VisualBasic.InputBox.
   // User can type anything — common language names ("English", "日本語"),
   // dialect / style descriptions ("学术英语", "中二风格的日语",
-  // "Klingon battle prose"), or even invented styles. DeepSeek interprets.
+  // "Klingon battle prose"), or even invented styles. AI interprets.
   std::wstring lang_file = lang_file_path();
 
   std::wstring ps;
@@ -366,7 +366,7 @@ void show_lang_picker_in_client(HWND /*owner*/) {
   ps += L" -split '`r?`n' | Where-Object {$_ -and $_ -notmatch '^\s*#'} | Select-Object -First 1)";
   ps += L"}else{'English'};";
   ps += L"if($null -eq $cur){$cur='English'};";
-  ps += L"$msg=\"输入翻译目标，可写任意 DeepSeek 能理解的描述。`n`n";
+  ps += L"$msg=\"输入翻译目标，可写任意 AI 能理解的描述。`n`n";
   ps += L"【语种】直接翻译为该语言`n";
   ps += L"   English / 日本語 / 한국어 / Français / Deutsch / Español / 粵語 / Türkçe`n`n";
   ps += L"【圈层风格】加入特定群体的说话方式`n";
@@ -376,10 +376,10 @@ void show_lang_picker_in_client(HWND /*owner*/) {
   ps += L"【场景/文体】指定语气、年代、媒介`n";
   ps += L"   学术英语 / 商务日语 / 古汉语风格 / 网络流行语`n";
   ps += L"   知乎体 / 小红书种草体 / 公众号文章体 / B站弹幕体`n`n";
-  ps += L"【虚构/自定义】DeepSeek 自由发挥`n";
+  ps += L"【虚构/自定义】AI 自由发挥`n";
   ps += L"   像鲁迅一样的英语 / 像周杰伦歌词 / 港片黑帮台词`n";
   ps += L"   Klingon battle prose / 火星文 / Spanish chilango\";";
-  ps += L"$r=[Microsoft.VisualBasic.Interaction]::InputBox($msg,'TypeAnything 切换语言',$cur);";
+  ps += L"$r=[Microsoft.VisualBasic.Interaction]::InputBox($msg,'输入法大王 - 切换语言',$cur);";
   ps += L"if($r){[System.IO.File]::WriteAllText($f,$r,";
   ps += L"(New-Object System.Text.UTF8Encoding $false))}\"";
 

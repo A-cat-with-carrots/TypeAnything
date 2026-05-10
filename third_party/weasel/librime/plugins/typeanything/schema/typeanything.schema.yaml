@@ -161,6 +161,11 @@ recognizer:
     uppercase: "[A-Z][-_+.'0-9A-Za-z]*$"
     url: "^(www[.]|https?:|ftp[.:]|mailto:|file:).*$|^[a-z]+[.].+$"
 
+# AI provider config — defaults to DeepSeek (cheap + good Chinese).
+# Replace host/path/model with any OpenAI Chat Completions compatible API:
+#   OpenAI:   host=api.openai.com  path=/v1/chat/completions  model=gpt-4o
+#   Moonshot: host=api.moonshot.cn path=/v1/chat/completions  model=moonshot-v1-8k
+#   Self-hosted vLLM/Ollama: host=your.host  path=/v1/chat/completions
 typeanything:
   api_key: ""
   model: deepseek-chat
