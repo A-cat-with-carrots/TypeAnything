@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="UserMacros">
+    <BOOST_ROOT>$BOOST_ROOT</BOOST_ROOT>
+    <PLATFORM_TOOLSET>$PLATFORM_TOOLSET</PLATFORM_TOOLSET>
+    <VERSION_MAJOR>$VERSION_MAJOR</VERSION_MAJOR>
+    <VERSION_MINOR>$VERSION_MINOR</VERSION_MINOR>
+    <VERSION_PATCH>$VERSION_PATCH</VERSION_PATCH>
+    <PRODUCT_VERSION>$PRODUCT_VERSION</PRODUCT_VERSION>
+    <FILE_VERSION>$FILE_VERSION</FILE_VERSION>
+  </PropertyGroup>
+  <ItemGroup>
+    <BuildMacro Include="BOOST_ROOT">
+      <Value>$(BOOST_ROOT)</Value>
+      <EnvironmentVariable>true</EnvironmentVariable>
+    </BuildMacro>
+    <BuildMacro Include="PLATFORM_TOOLSET">
+      <Value>$(PLATFORM_TOOLSET)</Value>
+      <EnvironmentVariable>true</EnvironmentVariable>
+    </BuildMacro>
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalOptions>/utf-8</AdditionalOptions>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>$(PreprocessorDefinitions);VERSION_MAJOR=$(VERSION_MAJOR);VERSION_MINOR=$(VERSION_MINOR);VERSION_PATCH=$(VERSION_PATCH);PRODUCT_VERSION=$(PRODUCT_VERSION);FILE_VERSION=$(FILE_VERSION);</PreprocessorDefinitions>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+</Project>

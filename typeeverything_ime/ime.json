@@ -1,0 +1,14 @@
+{
+  "name": "TypeEverything (PIME)",
+  "version": "0.2.0",
+  "guid": "{BA0BBA27-CCC6-4002-9286-2FB09DC5950B}",
+  "locale": "zh-Hans-CN",
+  "fallbackLocale": "zh-CN",
+  "icon": "icon.ico",
+  "win8_icon": "",
+  "moduleName": "typeeverything_ime_main",
+  "serviceName": "TypeEverythingTextService",
+  "configTool": "",
+  "configToolParams": "",
+  "configToolDir": "."
+}

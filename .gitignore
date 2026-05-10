@@ -1,0 +1,81 @@
+# Build outputs
+third_party/weasel/build/
+third_party/weasel/output/
+third_party/weasel/lib64/
+third_party/weasel/.xmake/
+third_party/weasel/include/wtl/
+
+# Vendored deps (rebuild via _build_weasel_xmake.ps1 + librime build script)
+third_party/weasel/deps/
+
+# librime — only our plugin tracked
+third_party/weasel/librime/*
+!third_party/weasel/librime/plugins/
+third_party/weasel/librime/plugins/*
+!third_party/weasel/librime/plugins/typeeverything/
+!third_party/weasel/librime/plugins/typeeverything/**
+
+# Compiled binaries
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.res
+*.o
+*.so
+*.dylib
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets & local config
+config.json
+!config.json.example
+**/typeeverything_lang.txt
+api_key*
+
+# Backups & temp
+*.bak
+*.new
+*.tmp
+*.swp
+*~
+
+# Editor / IDE
+.vscode/
+.idea/
+*.iml
+
+# Generated diagnostic dumps
+_check_exports.bat
+_find_brand.ps1
+_our_exports.txt
+_weasel_exports.txt
+_*.log
+_*.txt
+_*.bat
+_*.ps1
+
+# .git backups from monorepo extraction
+**/.git.removed-from-tracking/
+**/.git.bak/
+
+# Misc build noise
+**/%SystemDrive%/
+**/*.db
+third_party/weasel/msbuild/
+
+# Common build outputs
+dist/
+build/
+*.log
