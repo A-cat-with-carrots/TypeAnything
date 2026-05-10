@@ -185,25 +185,40 @@ if (Test-Path $root) {
     }
 }
 
-Write-Host "==> Redeploy schema (timeout 60s)"
+Write-Host "==> Redeploy schema (poll until typeanything.prism.bin written)"
 $buildCache = Join-Path $RimeUserDir "build"
 if (Test-Path $buildCache) {
     Remove-Item -Recurse -Force $buildCache -ErrorAction SilentlyContinue
 }
-# Run deployer in background; kill if it hangs (schema compile error often
-# spawns a hidden modal dialog that -WindowStyle Hidden cannot dismiss).
+# WeaselDeployer is a GUI app: /deploy compiles the schema then enters a Win32
+# message loop and never exits on its own. Detect compile completion by polling
+# the build artifact's mtime, then force-kill the deployer immediately.
+$markerFile = Join-Path $RimeUserDir "build\typeanything.prism.bin"
+$startedAt  = Get-Date
 $dep = Start-Process -WindowStyle Hidden -PassThru `
     -FilePath (Join-Path $WeaselDir "WeaselDeployer.exe") `
     -ArgumentList "/deploy"
-if (-not $dep.WaitForExit(60000)) {
-    Write-Warning "    deployer hung > 60s — force-killing. Check $RimeUserDir for schema errors."
-    & cmd.exe /c "taskkill /F /T /PID $($dep.Id) 1>nul 2>nul" | Out-Null
-} else {
+$compiledIn = $null
+while (-not $dep.HasExited) {
+    if ((Test-Path $markerFile) -and ((Get-Item $markerFile).LastWriteTime -gt $startedAt)) {
+        $compiledIn = (Get-Date) - $startedAt
+        & cmd.exe /c "taskkill /F /T /PID $($dep.Id) 1>nul 2>nul" | Out-Null
+        break
+    }
+    if (((Get-Date) - $startedAt).TotalSeconds -gt 60) {
+        Write-Warning "    deployer hung > 60s with no compile output — force-killing. Check $RimeUserDir for schema errors."
+        & cmd.exe /c "taskkill /F /T /PID $($dep.Id) 1>nul 2>nul" | Out-Null
+        break
+    }
+    Start-Sleep -Milliseconds 300
+}
+if ($compiledIn) {
+    Write-Host ("    schema compiled in {0:N1}s — deployer terminated" -f $compiledIn.TotalSeconds)
+} elseif ($dep.HasExited) {
     Write-Host "    deployer exited code $($dep.ExitCode)"
 }
-# Kill any leftover deployer + start a fresh server.
 & cmd.exe /c "taskkill /F /IM WeaselDeployer.exe /T 1>nul 2>nul" | Out-Null
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 300
 Start-Process (Join-Path $WeaselDir "WeaselServer.exe")
 
 # TSF picks up new Description on next session/login or when language bar is
