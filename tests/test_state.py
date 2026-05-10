@@ -7,7 +7,7 @@ production; tests don't need a live engine.
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "typeeverything_ime"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "typeanything_ime"))
 
 from state import StateMachine, State, Action  # noqa: E402
 

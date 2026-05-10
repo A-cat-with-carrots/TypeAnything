@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 HRDAI / TypeEverything contributors
+Copyright (c) 2026 HRDAI / TypeAnything contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +27,8 @@ under third_party/weasel/. Those files retain their original licenses
 (GPL v3 / BSD-3-Clause; see individual file headers). The MIT license above
 applies only to:
 
-- librime/plugins/typeeverything/**       (our Rime plugin)
-- install-typeeverything-to-weasel.ps1    (deployment script)
+- librime/plugins/typeanything/**       (our Rime plugin)
+- install-typeanything-to-weasel.ps1    (deployment script)
 - _build_weasel_xmake.ps1                 (build script)
-- README.md, TypeEverything.md, LICENSE
+- README.md, TypeAnything.md, LICENSE
 - diffs to upstream Weasel files (visible in git history)

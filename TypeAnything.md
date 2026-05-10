@@ -165,7 +165,7 @@ A 全套 + Unicode tag chars 隐写原文 + 浏览器插件 (WeChat web / Telegr
 ### File Structure
 
 ```
-typeeverything-ime/
+typeanything-ime/
   pime-translator/
     __init__.py
     translator_ime.py     # PIME TextService 子类，PIME 回调线程
@@ -183,7 +183,7 @@ typeeverything-ime/
                           # 失败时打印"右键以管理员运行"提示
   demo.md                 # 5-app 顺序 + 录屏脚本
   README.md
-  %LOCALAPPDATA%/typeeverything-ime/usage.jsonl  # console-only 默认；--log 时启用
+  %LOCALAPPDATA%/typeanything-ime/usage.jsonl  # console-only 默认；--log 时启用
                           # schema: {ts, in_tok, out_tok, cost_usd, latency_ms,
                           # provider, app_name}
 ```
@@ -300,7 +300,7 @@ Stretch (不算 must-have，时间多再做)：
 | 4 | VSCode 注释 | `zhefangfajiekoubuanquan` → "这方法接口不安全" | "This method interface is unsafe" | 程序员场景 — 工作语言切换 |
 | 5 | Word | `xinjihuabengfayouzhixingju` → "新计划本发有执行据" | "New plan with concrete execution roadmap" | 公司商务场景 |
 
-录屏开头 1 秒打字幕"Type Chinese, send English. Same IME, every app." 结尾 1 秒"github.com/dai/typeeverything-ime"。
+录屏开头 1 秒打字幕"Type Chinese, send English. Same IME, every app." 结尾 1 秒"github.com/dai/typeanything-ime"。
 
 如果 R1/R2 触发，按以下顺序砍：先砍 5 (Word，最少惊喜)，再砍 4 (VSCode，开发者眼里普通)。Notepad/Chrome/Discord 是底线，至少留 3 个。
 

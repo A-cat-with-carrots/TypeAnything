@@ -1,4 +1,4 @@
-# Rebrand: change all "Description" entries under Weasel TSF profile to "TypeEverything"
+# Rebrand: change all "Description" entries under Weasel TSF profile to "TypeAnything"
 # + change tooltip strings inside HKCU. Restart explorer at end so language bar reloads.
 #
 # Run as admin.
@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $WeaselClsid = "{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}"
 $ProfileGuid = "{3D02CAB6-2B8E-4781-BA20-1C9267529467}"
-$NewName = "TypeEverything"
+$NewName = "TypeAnything"
 
 $root = "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid\LanguageProfile"
 

@@ -1,4 +1,4 @@
-# TypeEverything
+# TypeAnything
 
 > **Type Chinese pinyin, get any of 30 languages — at the OS level, in any app.**
 > 在任意应用打拼音 → 空格选词 → Enter 触发 LLM 翻译 → 中文当场被替换为目标语言文本
@@ -33,7 +33,7 @@ nihao  → [Space 选「你好」] → [Enter] → Hello
 
 跨语言协作的真正瓶颈不在「会不会说英文」，在**打字速度**——你能用拼音 250 字/分钟想出来的句子，用英文键盘只剩 60 字/分钟。市面上的解法普遍：
 
-| 通病 | TypeEverything 改进 |
+| 通病 | TypeAnything 改进 |
 |------|--------------------|
 | 浏览器插件方案（DeepL Tab 等）只在 web 内有效 | **OS 级 TSF**，微信/Word/任何原生 app 都生效 |
 | 「划词翻译」要先打中文再选 → 中断思路 | **打字过程内联**，Enter 当场替换，零额外动作 |
@@ -55,7 +55,7 @@ nihao  → [Space 选「你好」] → [Enter] → Hello
 │   ↓                                                 │
 │  Weasel TSF DLL → librime engine → 「你好」         │
 │   ↓ commit_notifier 触发                            │
-│  TypeEverything Rime processor 累积「你好」         │
+│  TypeAnything Rime processor 累积「你好」         │
 └─────────────────────────────────────────────────────┘
                       ↓ [Enter]
 ┌─ 后台异步 ──────────────────────────────────────────┐
@@ -63,7 +63,7 @@ nihao  → [Space 选「你好」] → [Enter] → Hello
 │   ↓                                                 │
 │  WinHttpPost → api.deepseek.com/v1/chat/completions │
 │   payload = professional translator prompt + 你好  │
-│   target_lang ← %APPDATA%\Rime\typeeverything_      │
+│   target_lang ← %APPDATA%\Rime\typeanything_      │
 │                  lang.txt (托盘菜单写入)             │
 └─────────────────────────────────────────────────────┘
                       ↓ ~1s 后 LLM 返回
@@ -93,21 +93,21 @@ nihao  → [Space 选「你好」] → [Enter] → Hello
 
 ```powershell
 # 管理员 PowerShell
-git clone https://github.com/A-cat-with-carrots/TypeEverything.git
-cd TypeEverything
-.\install-typeeverything-to-weasel.ps1 -ApiKey "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+git clone https://github.com/A-cat-with-carrots/TypeAnything.git
+cd TypeAnything
+.\install-typeanything-to-weasel.ps1 -ApiKey "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
 脚本干这些：
 1. 优雅 `/q` 关 WeaselServer + `taskkill /F /T` + `MoveFileEx` pending-on-reboot 兜底
 2. 备份 Weasel 原版 binary 到 `*.bak`
 3. 替换 `rime.dll` / `weaselx64.dll` / `WeaselServer.exe` / `WeaselDeployer.exe` + `system32\weasel.dll`
-4. 隐藏其他 schema（让 Deployer 「方案列表」只剩 TypeEverything）
-5. 写 `typeeverything.schema.yaml` + 注入 API key
-6. 改 TSF 注册表 IME 描述为 `TypeEverything`
+4. 隐藏其他 schema（让 Deployer 「方案列表」只剩 TypeAnything）
+5. 写 `typeanything.schema.yaml` + 注入 API key
+6. 改 TSF 注册表 IME 描述为 `TypeAnything`
 7. 重 deploy + 重启 server
 
-完成后**注销重登**或**重启**让所有 TSF 客户端进程加载新 `weaselx64.dll`。然后 Win+Space 切到 TypeEverything。
+完成后**注销重登**或**重启**让所有 TSF 客户端进程加载新 `weaselx64.dll`。然后 Win+Space 切到 TypeAnything。
 
 ### 切换目标语言
 
@@ -120,7 +120,7 @@ cd TypeEverything
 ### 流程速览
 
 ```
-1. Win+Space 切到 TypeEverything
+1. Win+Space 切到 TypeAnything
 2. 任意输入框打拼音：nihao shijie
 3. Space 选词 → 「你好世界」
 4. Enter → 中文消失 → 「Hello world」 落地
@@ -131,7 +131,7 @@ cd TypeEverything
 ```
 托盘鱼图标右键 → 切换语言 → 选 Français
 ↓
-Rime/typeeverything_lang.txt 写入 "fr"
+Rime/typeanything_lang.txt 写入 "fr"
 ↓
 下次 Enter 触发翻译时 processor 重读文件 → "Bonjour le monde"
 ```
@@ -141,17 +141,17 @@ Rime/typeeverything_lang.txt 写入 "fr"
 ## 文件结构
 
 ```
-TypeEverything/
+TypeAnything/
 ├── README.md                                    本文档
-├── TypeEverything.md                            原始设计文档（PIME 失败 → 切到 Weasel 全过程）
-├── install-typeeverything-to-weasel.ps1         一条命令部署脚本（含 MoveFileEx 兜底）
+├── TypeAnything.md                            原始设计文档（PIME 失败 → 切到 Weasel 全过程）
+├── install-typeanything-to-weasel.ps1         一条命令部署脚本（含 MoveFileEx 兜底）
 ├── fish.ico                                     神仙鱼品牌图标（multi-res ICO，从 hrdai 网站 logo 转）
 ├── pyproject.toml                               Python 原型项目元数据
 ├── config.json.example                          LLM 配置模板（API key / model / temperature）
 ├── tests/
 │   └── test_state.py                            状态机单元测试（PIME 原型期产物）
-├── typeeverything_ime/                          PIME 时代 Python 原型（保留作历史 reference）
-│   ├── typeeverything_main.py                   PIME 入口
+├── typeanything_ime/                          PIME 时代 Python 原型（保留作历史 reference）
+│   ├── typeanything_main.py                   PIME 入口
 │   ├── state.py                                 状态机
 │   ├── llm_client.py                            DeepSeek httpx client
 │   └── data/pinyin.dict.yaml                    完整拼音词典
@@ -171,22 +171,22 @@ TypeEverything/
         │   ├── full.ico half.ico reload.ico
         ├── include/
         │   ├── resource.h                       ★ 加 ID_WEASELTRAY_SWITCH_LANG / LANG_BASE
-        │   └── WeaselUtility.h                  ★ get_weasel_ime_name() 永远返 TypeEverything
+        │   └── WeaselUtility.h                  ★ get_weasel_ime_name() 永远返 TypeAnything
         ├── _build_weasel_xmake.ps1              xmake 构建脚本（绕过 msbuild FileTracker bug）
         ├── xmake.lua                            ★ 含 boost prebuilt + ATL 检测 + INCLUDE 大写修正
         └── librime/
             └── plugins/
-                └── typeeverything/              ★ 我们的核心 Rime 插件
+                └── typeanything/              ★ 我们的核心 Rime 插件
                     ├── src/
-                    │   ├── typeeverything_processor.cc   ★ 30 lang + WinHttp + commit hook + 异步替换
-                    │   ├── typeeverything_processor.h
-                    │   └── typeeverything_module.cc      RIME_REGISTER_MODULE
+                    │   ├── typeanything_processor.cc   ★ 30 lang + WinHttp + commit hook + 异步替换
+                    │   ├── typeanything_processor.h
+                    │   └── typeanything_module.cc      RIME_REGISTER_MODULE
                     ├── schema/
-                    │   └── typeeverything.schema.yaml    ★ luna_pinyin + simplifier + DeepSeek 配置
+                    │   └── typeanything.schema.yaml    ★ luna_pinyin + simplifier + DeepSeek 配置
                     └── CMakeLists.txt
 ```
 
-★ = TypeEverything 改动 / 新增。其他保持上游兼容。
+★ = TypeAnything 改动 / 新增。其他保持上游兼容。
 
 ---
 
@@ -194,7 +194,7 @@ TypeEverything/
 
 ### 1. 加新语言
 
-编辑 `third_party/weasel/librime/plugins/typeeverything/src/typeeverything_processor.cc` 的 `kLangs[]` 数组：
+编辑 `third_party/weasel/librime/plugins/typeanything/src/typeanything_processor.cc` 的 `kLangs[]` 数组：
 
 ```cpp
 static const LangEntry kLangs[] = {
@@ -209,10 +209,10 @@ static const LangEntry kLangs[] = {
 
 ### 2. 改 LLM provider
 
-`typeeverything.schema.yaml`：
+`typeanything.schema.yaml`：
 
 ```yaml
-typeeverything:
+typeanything:
   api_key: "sk-..."
   model: deepseek-chat       # → claude-3-5-sonnet-20241022
   host: api.deepseek.com     # → api.anthropic.com
@@ -224,7 +224,7 @@ OpenAI / Anthropic 兼容协议直接换 host + path 即可。Anthropic `/v1/mes
 
 ### 3. 改翻译 prompt
 
-`typeeverything_processor.cc` 里 `kSystemPrompt` 字符串 — 5 条 rule 写在那。
+`typeanything_processor.cc` 里 `kSystemPrompt` 字符串 — 5 条 rule 写在那。
 
 ### 4. 改图标
 
@@ -239,7 +239,7 @@ im.save("fish.ico", format="ICO",
 
 ### 5. 不替换 system32\weasel.dll（保留原 Weasel 图标）
 
-`install-typeeverything-to-weasel.ps1` 注释掉 `Copy-LockedOrPending $srcTSF $sys32Dll` 那段。语言栏图标会保留 Weasel 默认（不变神仙鱼），但 Weasel 安装目录里的所有 DLL/EXE 仍是 TypeEverything 版。
+`install-typeanything-to-weasel.ps1` 注释掉 `Copy-LockedOrPending $srcTSF $sys32Dll` 那段。语言栏图标会保留 Weasel 默认（不变神仙鱼），但 Weasel 安装目录里的所有 DLL/EXE 仍是 TypeAnything 版。
 
 ---
 
@@ -266,12 +266,12 @@ cd ..
 ```
 
 产物路径：
-- `librime\dist\lib\rime.dll` — librime 含 typeeverything plugin
+- `librime\dist\lib\rime.dll` — librime 含 typeanything plugin
 - `build\windows\x64\release\WeaselServer\WeaselServer.exe` — 托盘 server
 - `build\windows\x64\release\WeaselDeployer\WeaselDeployer.exe`
 - `build\windows\x64\release\WeaselTSF\weaselx64.dll` — TSF DLL
 
-跑 `.\install-typeeverything-to-weasel.ps1 -ApiKey "..."` 部署。
+跑 `.\install-typeanything-to-weasel.ps1 -ApiKey "..."` 部署。
 
 ---
 
@@ -307,20 +307,20 @@ cd ..
 - Python PIME backend，httpx sync DeepSeek
 - 状态机 + 20 单元测试
 - 微信 ghost cursor → **PIME 不可用** → 弃案
-- 完整设计文档见 `TypeEverything.md`
+- 完整设计文档见 `TypeAnything.md`
 
 ---
 
 ## 贡献
 
 重点方向：
-- **macOS port**：用 squirrel 框架，复用我们的 typeeverything plugin（C++ 跨平台）
+- **macOS port**：用 squirrel 框架，复用我们的 typeanything plugin（C++ 跨平台）
 - **Linux port**：用 ibus-rime 或 fcitx-rime
 - **流式翻译**：DeepSeek streaming API → 边翻边显示，p50 从 1s 降到 200ms
 - **错误 toast**：API 失败时托盘气泡提示
 - **离线 fallback**：本地小 model（Qwen 1.5B）做兜底翻译
 
-PR 前先看 `TypeEverything.md` 了解架构史 + 失败模式沉淀。
+PR 前先看 `TypeAnything.md` 了解架构史 + 失败模式沉淀。
 
 ---
 
@@ -338,4 +338,4 @@ PR 前先看 `TypeEverything.md` 了解架构史 + 失败模式沉淀。
 
 MIT — 详见 [LICENSE](LICENSE)。
 
-Weasel 上游代码（`third_party/weasel/`）保持其原 license（GPL v3 / BSD-3-Clause 见各文件头）；本仓库新增代码（`librime/plugins/typeeverything/`、`install-*.ps1`、修改的 .cpp 文件 diff）以 MIT 发布。
+Weasel 上游代码（`third_party/weasel/`）保持其原 license（GPL v3 / BSD-3-Clause 见各文件头）；本仓库新增代码（`librime/plugins/typeanything/`、`install-*.ps1`、修改的 .cpp 文件 diff）以 MIT 发布。

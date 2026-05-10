@@ -8,7 +8,7 @@ Modes:
   english_mode (Shift+Space toggle)  — passthrough; nothing intercepted.
   target_lang  (lang-bar menu button) — runtime-switched per session.
 
-Lives at: C:\\Program Files (x86)\\PIME\\python\\input_methods\\typeeverything\\typeeverything_ime_main.py
+Lives at: C:\\Program Files (x86)\\PIME\\python\\input_methods\\typeanything\\typeanything_ime_main.py
 """
 
 import os.path
@@ -59,7 +59,7 @@ ID_MODE_TOGGLE = 100
 ID_LANG_BASE = 200
 
 
-class TypeEverythingTextService(TextService):
+class TypeAnythingTextService(TextService):
     def __init__(self, client):
         super().__init__(client)
         self.cfg = load_config(_THIS_DIR)
@@ -112,8 +112,8 @@ class TypeEverythingTextService(TextService):
             self._llm.close()
             self._llm = None
         try:
-            self.removeButton("typeeverything-mode")
-            self.removeButton("typeeverything-lang")
+            self.removeButton("typeanything-mode")
+            self.removeButton("typeanything-lang")
         except Exception:
             pass
 
@@ -180,13 +180,13 @@ class TypeEverythingTextService(TextService):
 
     def _add_buttons(self):
         try:
-            self.addButton("typeeverything-mode",
+            self.addButton("typeanything-mode",
                 text="中" if not self.english_mode else "EN",
                 tooltip="Shift+Space: toggle Chinese / English passthrough",
                 commandId=ID_MODE_TOGGLE,
                 type="button",
             )
-            self.addButton("typeeverything-lang",
+            self.addButton("typeanything-lang",
                 text=self.target_lang[:3].upper(),
                 tooltip="Click to choose target language",
                 commandId=ID_LANG_BASE,
@@ -197,14 +197,14 @@ class TypeEverythingTextService(TextService):
 
     def _update_mode_button(self):
         try:
-            self.changeButton("typeeverything-mode",
+            self.changeButton("typeanything-mode",
                 text="中" if not self.english_mode else "EN")
         except Exception:
             pass
 
     def _update_lang_button(self):
         try:
-            self.changeButton("typeeverything-lang",
+            self.changeButton("typeanything-lang",
                 text=self.target_lang[:3].upper())
         except Exception:
             pass
@@ -221,7 +221,7 @@ class TypeEverythingTextService(TextService):
             return
 
     def onMenu(self, buttonId):
-        if buttonId == "typeeverything-lang":
+        if buttonId == "typeanything-lang":
             return [
                 {"text": lang.title(), "id": ID_LANG_BASE + i}
                 for i, lang in enumerate(self.lang_options)

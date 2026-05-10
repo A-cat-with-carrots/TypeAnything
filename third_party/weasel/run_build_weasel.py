@@ -3,7 +3,7 @@
 Pre-reqs:
   - librime already built (rime.dll in librime/dist/lib/)
   - boost prebuilt at C:\\local\\boost_1_84_0
-  - source files patched with TypeEverything branding
+  - source files patched with TypeAnything branding
 """
 import os, subprocess, sys, shutil
 

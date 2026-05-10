@@ -1,10 +1,10 @@
 #requires -RunAsAdministrator
 <#
-Install TypeEverything: custom rime.dll + Weasel UI binaries + schema + rebrand.
+Install TypeAnything: custom rime.dll + Weasel UI binaries + schema + rebrand.
 
 Run from admin PowerShell:
   cd D:\hrdai\aiForType
-  .\install-typeeverything-to-weasel.ps1 -ApiKey "sk-xxxx"
+  .\install-typeanything-to-weasel.ps1 -ApiKey "sk-xxxx"
 #>
 
 param(
@@ -14,7 +14,7 @@ param(
   [string]$WeaselDir   = "C:\Program Files\Rime\weasel-0.17.4",
   [string]$BuildRoot   = "D:\hrdai\aiForType\third_party\weasel",
   [string]$OurRimeDll  = "D:\hrdai\aiForType\third_party\weasel\librime\dist\lib\rime.dll",
-  [string]$SchemaSrc   = "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeeverything\schema\typeeverything.schema.yaml",
+  [string]$SchemaSrc   = "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.schema.yaml",
   [string]$RimeUserDir = (Join-Path $env:APPDATA "Rime"),
   [string]$TargetLang  = "English"
 )
@@ -156,31 +156,31 @@ if (Test-Path $weaselData) {
     }
 }
 
-Write-Host "==> Install typeeverything schema with API key"
+Write-Host "==> Install typeanything schema with API key"
 if (-not (Test-Path $RimeUserDir)) { New-Item -ItemType Directory -Path $RimeUserDir | Out-Null }
 $schemaContent = Get-Content $SchemaSrc -Raw -Encoding UTF8
 $schemaContent = $schemaContent -replace 'api_key: ""', "api_key: ""$ApiKey"""
 $schemaContent = $schemaContent -replace 'target_lang: English', "target_lang: $TargetLang"
-$schemaContent | Set-Content -Path (Join-Path $RimeUserDir "typeeverything.schema.yaml") -Encoding UTF8
+$schemaContent | Set-Content -Path (Join-Path $RimeUserDir "typeanything.schema.yaml") -Encoding UTF8
 
 # Seed default lang
-Set-Content -Path (Join-Path $RimeUserDir "typeeverything_lang.txt") -Value "en" -Encoding ASCII -NoNewline
+Set-Content -Path (Join-Path $RimeUserDir "typeanything_lang.txt") -Value "en" -Encoding ASCII -NoNewline
 
-Write-Host "==> Patch default.custom.yaml: only typeeverything"
+Write-Host "==> Patch default.custom.yaml: only typeanything"
 $customContent = @"
 patch:
   schema_list:
-    - schema: typeeverything
+    - schema: typeanything
 "@
 $customContent | Set-Content -Path (Join-Path $RimeUserDir "default.custom.yaml") -Encoding UTF8
 
-Write-Host "==> Rebrand TSF profile descriptions to TypeEverything"
+Write-Host "==> Rebrand TSF profile descriptions to TypeAnything"
 $root = "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid\LanguageProfile"
 if (Test-Path $root) {
     Get-ChildItem $root -ErrorAction SilentlyContinue | ForEach-Object {
         $profKeyPath = Join-Path $_.PSPath $ProfileGuid
         if (Test-Path $profKeyPath) {
-            Set-ItemProperty -Path $profKeyPath -Name "Description" -Value "TypeEverything" -Type String -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $profKeyPath -Name "Description" -Value "TypeAnything" -Type String -ErrorAction SilentlyContinue
         }
     }
 }
@@ -209,7 +209,7 @@ Start-Process (Join-Path $WeaselDir "WeaselServer.exe")
 # TSF picks up new Description on next session/login or when language bar is
 # refreshed. We avoid restarting explorer (causes the visible black flash and
 # spurious folder windows). User can sign out + back in to see new name in the
-# Win+Space menu, OR just wait — new apps already see TypeEverything.
+# Win+Space menu, OR just wait — new apps already see TypeAnything.
 
 if ($script:RebootNeeded) {
     Write-Host ""

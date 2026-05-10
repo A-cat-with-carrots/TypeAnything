@@ -1078,7 +1078,7 @@ void WeaselPanel::DoPaint(CDCHandle dc) {
     }
     // end texts drawing
 
-    // status icon — disabled for TypeEverything (no in-line mode badge).
+    // status icon — disabled for TypeAnything (no in-line mode badge).
     if (false) {
       // decide if custom schema zhung icon to show
       LoadIconNecessary(m_current_zhung_icon, m_style.current_zhung_icon,

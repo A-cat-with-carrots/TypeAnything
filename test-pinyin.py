@@ -1,5 +1,5 @@
 """
-Validation 2 (per TypeEverything.md "The First Real Action"):
+Validation 2 (per TypeAnything.md "The First Real Action"):
 Test Pinyin2Hanzi output quality on 5 common phrases.
 
 Pass criterion: at least 4/5 outputs are recognizable Chinese.

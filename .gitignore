@@ -12,8 +12,11 @@ third_party/weasel/deps/
 third_party/weasel/librime/*
 !third_party/weasel/librime/plugins/
 third_party/weasel/librime/plugins/*
-!third_party/weasel/librime/plugins/typeeverything/
-!third_party/weasel/librime/plugins/typeeverything/**
+!third_party/weasel/librime/plugins/typeanything/
+!third_party/weasel/librime/plugins/typeanything/**
+
+# Old typeeverything path — leftover from rename, ignore until cleaned
+third_party/weasel/librime/plugins/typeeverything/
 
 # Compiled binaries
 *.exe
@@ -41,7 +44,7 @@ venv/
 # Secrets & local config
 config.json
 !config.json.example
-**/typeeverything_lang.txt
+**/typeanything_lang.txt
 api_key*
 
 # Backups & temp

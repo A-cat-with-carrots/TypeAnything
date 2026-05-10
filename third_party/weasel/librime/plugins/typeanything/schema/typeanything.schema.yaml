@@ -1,0 +1,84 @@
+# TypeAnything — pinyin → simplified Chinese → on Enter, LLM translates
+# Chinese to the active target language (chosen via tray "Switch Language" menu).
+
+schema:
+  schema_id: typeanything
+  name: TypeAnything
+  version: "0.3"
+  author:
+    - TypeAnything
+  description: |
+    Type Chinese pinyin, press Enter, get target-language translation.
+    Switch target language via the tray icon's "Switch Language" menu.
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [ 中文, ABC ]
+  - name: simplification
+    reset: 1
+    states: [ 漢字, 汉字 ]
+
+engine:
+  processors:
+    - typeanything_processor
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - reverse_lookup_translator
+    - script_translator
+  filters:
+    - simplifier@simplification_filter
+    - uniquifier
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+  algebra:
+    - erase/^xx$/
+    - derive/^([jqxy])u$/$1v/
+    - derive/^([aoe])(.*)$/o$1$2/
+    - xform/^([aoe])(.*)$/$1$1$2/
+
+translator:
+  dictionary: luna_pinyin
+  prism: typeanything
+  enable_user_dict: true
+
+simplification_filter:
+  option_name: simplification
+  opencc_config: t2s.json
+
+punctuator:
+  import_preset: default
+
+key_binder:
+  import_preset: default
+
+recognizer:
+  import_preset: default
+  patterns:
+    email: "^[A-Za-z][-_.0-9A-Za-z]*@.*$"
+    uppercase: "[A-Z][-_+.'0-9A-Za-z]*$"
+    url: "^(www[.]|https?:|ftp[.:]|mailto:|file:).*$|^[a-z]+[.].+$"
+
+typeanything:
+  api_key: ""
+  model: deepseek-chat
+  host: api.deepseek.com
+  path: /v1/chat/completions
+  target_lang: English   # fallback when typeanything_lang.txt absent
+  temperature: 0.3

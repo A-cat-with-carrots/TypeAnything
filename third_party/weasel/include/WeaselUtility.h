@@ -187,7 +187,7 @@ inline std::basic_string<CharT> unescape_string(
 std::string GetCustomResource(const char* name, const char* type);
 
 inline std::wstring get_weasel_ime_name() {
-  return L"TypeEverything";
+  return L"TypeAnything";
 }
 
 inline LONG RegGetStringValue(HKEY key,

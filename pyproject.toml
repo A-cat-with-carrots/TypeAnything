@@ -1,5 +1,5 @@
 [project]
-name = "typeeverything-ime"
+name = "typeanything-ime"
 version = "0.1.0"
 description = "Pause-300ms Chinese-to-English IME via PIME + DeepSeek"
 requires-python = ">=3.10"
@@ -18,4 +18,4 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["typeeverything_ime"]
+packages = ["typeanything_ime"]

@@ -79,16 +79,16 @@ static const LangEntry kLangs[] = {
 };
 
 std::filesystem::path lang_file_path() {
-  // %APPDATA%\Rime\typeeverything_lang.txt
+  // %APPDATA%\Rime\typeanything_lang.txt
   PWSTR path_str = nullptr;
   std::filesystem::path p;
   if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL,
                                      &path_str))) {
     p = std::filesystem::path(path_str) / L"Rime" /
-        L"typeeverything_lang.txt";
+        L"typeanything_lang.txt";
     CoTaskMemFree(path_str);
   } else {
-    p = L"typeeverything_lang.txt";
+    p = L"typeanything_lang.txt";
   }
   return p;
 }
