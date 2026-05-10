@@ -249,3 +249,11 @@ if ($script:RebootNeeded) {
     Write-Host "  All binaries deployed cleanly."
 }
 Write-Host "Done."
+
+# Auto-close after a short pause so user can read final status. When spawned
+# via `Start-Process -Verb RunAs`, the elevated PS window stays open on its
+# own; this exit closes it.
+Write-Host ""
+Write-Host "Window closes in 5 seconds. (Ctrl+C to keep open.)"
+Start-Sleep -Seconds 5
+exit 0
