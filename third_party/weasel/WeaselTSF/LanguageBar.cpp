@@ -398,6 +398,20 @@ void WeaselTSF::_HandleLangBarMenuSelect(UINT wID) {
       show_lang_picker_in_client(focus ? focus : GetForegroundWindow());
       return;
     }
+    case ID_WEASELTRAY_MODEL_CONFIG: {
+      std::wstring root;
+      RegGetStringValue(HKEY_LOCAL_MACHINE, GetWeaselRegName(),
+                        L"WeaselRoot", root);
+      if (root.empty()) {
+        root = L"C:\Program Files\Rime\weasel-0.17.4";
+      }
+      std::wstring args =
+          L"-NoProfile -STA -ExecutionPolicy Bypass -File \"" + root +
+          L"\model-config.ps1\"";
+      ShellExecuteW(NULL, L"open", L"powershell.exe", args.c_str(),
+                    NULL, SW_SHOWNORMAL);
+      return;
+    }
     case ID_WEASELTRAY_RERUN_SERVICE:
     case ID_WEASELTRAY_INSTALLDIR:
       if (RegGetStringValue(HKEY_LOCAL_MACHINE, GetWeaselRegName(),

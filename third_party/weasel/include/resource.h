@@ -28,6 +28,7 @@
 #define ID_WEASELTRAY_RERUN_SERVICE     40015
 #define ID_WEASELTRAY_LOGDIR            40016
 #define ID_WEASELTRAY_SWITCH_LANG       40020
+#define ID_WEASELTRAY_MODEL_CONFIG      40021
 #define ID_WEASELTRAY_LANG_BASE         40100
 
 // Next default values for new objects

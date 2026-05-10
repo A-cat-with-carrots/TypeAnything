@@ -191,10 +191,18 @@ cd TypeAnything
 4. Enter → 中文消失 → 落地为目标风格
 ```
 
+### 托盘菜单（右键鱼图标 / TSF 输入法图标）
+
+```
+切换语言  (L)   ← 弹框输入任意自然语言目标
+模型配置  (M)   ← WinForms 弹框配置 4 字段：API Key / Model / Host / Path
+检查更新  (U)   ← 打开 GitHub Releases
+```
+
 ### 切换目标风格
 
 ```
-托盘神仙鱼图标右键 → 切换语言 → 弹框 → 输入任何描述
+右键 → 切换语言 → 弹框 → 输入任何描述
 ↓
 %APPDATA%\Rime\typeanything_lang.txt 第一行更新
 ↓
@@ -207,6 +215,27 @@ cd TypeAnything
 - `古汉语风格` / `小红书种草体`
 - `像鲁迅一样的英语` / `Klingon battle prose`
 - 任何你能想到的描述
+
+### 模型配置（接入自己的模型）
+
+```
+右键 → 模型配置 → WinForms 弹框 → 改 4 字段 → 保存并应用
+```
+
+字段：
+
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| **API Key** | （安装时填的） | 你自己的 API key（mask 显示，可勾「显示」） |
+| **Model** | `deepseek-chat` | 模型名（`gpt-4o` / `moonshot-v1-8k` / `qwen2.5:7b` / 任意） |
+| **Host** | `api.deepseek.com` | 服务 host（`api.openai.com` / `api.moonshot.cn` / `localhost:11434`） |
+| **Path** | `/v1/chat/completions` | OpenAI Chat Completions 兼容协议 |
+
+保存后：
+- 直接写到 `%APPDATA%\Rime\typeanything.schema.yaml`
+- 自动重启 WeaselServer 让新配置生效（无需注销重登）
+
+**隐私保证**：你的输入只发到上面这个 endpoint，没有中转代理 / shared backend / vendor lock-in。换 provider 一行配置搞定。
 
 ### 拼音 → 汉字 自学习
 
@@ -242,6 +271,7 @@ TypeAnything/
 ├── install-typeanything-to-weasel.ps1         源码构建路径的部署脚本
 ├── Install-TypeAnything.bat                   一键安装包入口（UAC + GUI）
 ├── Install-TypeAnything.ps1                   GUI 包装
+├── model-config.ps1                            托盘「模型配置」菜单弹的 WinForms 弹框
 ├── fish.ico                                     神仙鱼品牌图标
 └── third_party/
     └── weasel/                                  fork 自 rime/weasel
@@ -343,9 +373,14 @@ cd ..
 - **任意自然语言目标** — 切换语言改 PowerShell InputBox，user 输入任意 AI 能理解的描述
   - 4 大类：语种 / 圈层风格 / 场景文体 / 虚构自定义
   - **金融式说话 / 留学生式说话 / 互联网黑话** 等圈层风格是核心卖点
+- **模型配置 GUI** — 托盘菜单加「模型配置」项，弹 WinForms 4 字段表单（API Key / Model / Host / Path）
+  - 直接写 schema yaml + 自动重启 server，新配置秒级生效
+  - 内置 cheat sheet：DeepSeek / OpenAI / Moonshot / Ollama 常见组合
+  - 隐私保证：每个用户用自己的 API key 直连，无中转代理
 - **拼音→汉字 自学习强化** — Rime user_dict 增强（encoder/sentence/completion/initial_quality）
 - **标点直输** — schema 覆盖 punctuator preset，单候选直接出，对齐 Microsoft IME
 - **图标 0 margin 紧贴**，每 size 独立 LANCZOS 渲染
+- 托盘菜单减到 3 项（删除 重启 / 退出 — 用户极少手动执行）
 - WinSparkle 自动检查彻底删除（不再弹「新版本 0.17.4」跳 rime.im）
 - 切换语言菜单从 server-side popup 改 TSF DLL 弹 PS InputBox
 - 删字 bug fix：BackSpace 在 composition 外时 pop accumulated_ 末尾 UTF-8 char

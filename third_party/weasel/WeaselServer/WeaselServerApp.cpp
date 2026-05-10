@@ -153,6 +153,17 @@ void WeaselServerApp::SetupMenuHandlers() {
   // Check for updates
   m_server.AddMenuHandler(ID_WEASELTRAY_CHECKUPDATE, check_update);
 
+  // Model config — spawn the WinForms-based PS popup that lets the user
+  // edit api_key / model / host / path in the schema yaml on the fly.
+  m_server.AddMenuHandler(ID_WEASELTRAY_MODEL_CONFIG, [dir] {
+    std::wstring ps_path = (dir / L"model-config.ps1").wstring();
+    std::wstring args = L"-NoProfile -STA -ExecutionPolicy Bypass -File \"" +
+                        ps_path + L"\"";
+    return (uintptr_t)ShellExecuteW(NULL, L"open", L"powershell.exe",
+                                    args.c_str(), NULL,
+                                    SW_SHOWNORMAL) > 32;
+  });
+
   // Restart — re-deploy schemas (also rebuilds dictionaries)
   m_server.AddMenuHandler(ID_WEASELTRAY_DEPLOY,
                           std::bind(execute, dir / L"WeaselDeployer.exe",

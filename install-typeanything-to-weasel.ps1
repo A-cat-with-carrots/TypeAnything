@@ -170,6 +170,20 @@ if (Test-Path $weaselData) {
     }
 }
 
+Write-Host "==> Ship model-config.ps1 next to the binaries"
+$mcCandidates = @(
+    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "model-config.ps1"),
+    (Join-Path $BuildRoot "..\..\model-config.ps1"),
+    "D:\hrdai\aiForType\model-config.ps1"
+)
+$mcSrcReal = $null
+foreach ($c in $mcCandidates) { if (Test-Path $c) { $mcSrcReal = $c; break } }
+if ($mcSrcReal) {
+    Copy-LockedOrPending $mcSrcReal (Join-Path $WeaselDir "model-config.ps1") "model-config.ps1" | Out-Null
+} else {
+    Write-Warning "    model-config.ps1 not found in install bundle or repo root; tray menu's '模型配置' will be a no-op"
+}
+
 Write-Host "==> Install typeanything schema with API key"
 if (-not (Test-Path $RimeUserDir)) { New-Item -ItemType Directory -Path $RimeUserDir | Out-Null }
 $schemaContent = Get-Content $SchemaSrc -Raw -Encoding UTF8
