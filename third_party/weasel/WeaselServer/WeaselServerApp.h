@@ -34,18 +34,14 @@ class WeaselServerApp {
   }
 
   static bool check_update() {
-    // when checked manually, show testing versions too
-    std::string feed_url = GetCustomResource("ManualUpdateFeedURL", "APPCAST");
-    std::wstring channel{};
-    auto ret = RegGetStringValue(HKEY_CURRENT_USER, L"Software\\Rime\\Weasel",
-                                 L"UpdateChannel", channel);
-    if (!ret && channel == L"testing") {
-      feed_url = GetCustomResource("TestingManualUpdateFeedURL", "APPCAST");
-    }
-    if (!feed_url.empty()) {
-      win_sparkle_set_appcast_url(feed_url.c_str());
-    }
-    win_sparkle_check_update_with_ui();
+    // TypeAnything: open the GitHub Releases page in the user's default
+    // browser. Avoids the WinSparkle appcast pipeline (which depends on a
+    // specifically-formatted appcast.xml hosted at a fixed upstream URL —
+    // we don't have one) and gives the user a real changelog to read.
+    ShellExecuteW(
+        NULL, L"open",
+        L"https://github.com/A-cat-with-carrots/TypeAnything/releases",
+        NULL, NULL, SW_SHOWNORMAL);
     return true;
   }
 

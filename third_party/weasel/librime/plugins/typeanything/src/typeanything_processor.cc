@@ -422,9 +422,15 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
             english.back() == '\r' || english.back() == '\t')) {
       english.pop_back();
     }
-    if (english.empty()) english = "[translation failed]";
+    if (english.empty()) {
+      // Network error / API rejection / empty body. Leave the Chinese in place
+      // so user knows translation didn't run; log for diagnostics.
+      LOG(ERROR) << "TypeAnything: LLM returned empty for input: " << chinese
+                 << "; raw body bytes: " << body.size();
+      suppress_capture_.store(false);
+      return;
+    }
 
-    // Delete the original Chinese chars and paste translation.
     if (SetClipboardUtf8(english)) {
       SendBackspaces((int)chinese_chars);
       std::this_thread::sleep_for(std::chrono::milliseconds(30));

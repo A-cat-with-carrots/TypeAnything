@@ -150,11 +150,12 @@ TypeAnything/
 ├── config.json.example                          LLM 配置模板（API key / model / temperature）
 ├── tests/
 │   └── test_state.py                            状态机单元测试（PIME 原型期产物）
-├── typeanything_ime/                          PIME 时代 Python 原型（保留作历史 reference）
-│   ├── typeanything_main.py                   PIME 入口
-│   ├── state.py                                 状态机
-│   ├── llm_client.py                            DeepSeek httpx client
-│   └── data/pinyin.dict.yaml                    完整拼音词典
+├── legacy/                                     失败方案归档（参考用，非当前在用）
+│   └── typeanything_ime/                        PIME 时代 Python 原型（设计文档见 TypeAnything.md）
+│       ├── typeanything_main.py                 PIME 入口
+│       ├── state.py                             状态机
+│       ├── llm_client.py                        DeepSeek httpx client
+│       └── data/pinyin.dict.yaml                完整拼音词典
 └── third_party/
     └── weasel/                                  fork 自 rime/weasel（C++ TSF 框架）
         ├── WeaselServer/                        托盘 server — 改 4 项菜单 + 30 语言切换弹窗
