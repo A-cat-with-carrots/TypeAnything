@@ -52,11 +52,22 @@ speller:
     - derive/^([jqxy])u$/$1v/
     - derive/^([aoe])(.*)$/o$1$2/
     - xform/^([aoe])(.*)$/$1$1$2/
+    # 模糊音匹配：声母简写（zh→z / ch→c / sh→s）
+    - derive/^([zcs])h/$1/
+    # 首字母缩写：每个音节只输首字母，例如 xz→现在 / bjdx→北京大学
+    - abbrev/^([a-z]).+$/$1/
+    # 多字符前缀缩写：xian→x（声母）OR xian→xi（声母+介音）
+    - abbrev/^([a-z]{2}).+$/$1/
 
 translator:
   dictionary: luna_pinyin
   prism: typeanything
   enable_user_dict: true
+  # 接受 abbrev/derive 产生的部分匹配
+  enable_completion: true
+  # 让简写也参与候选排序，否则匹配但权重过低看不到
+  preedit_format:
+    - xform/([nljqxy])v/$1ü/
 
 simplification_filter:
   option_name: simplification
