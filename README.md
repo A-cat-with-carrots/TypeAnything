@@ -20,10 +20,12 @@ nihao  → [Space 选「你好」] → [Enter] → Hello
 
 ——在**任意 Windows 应用**（微信 / Word / Chrome / VSCode / 记事本 / Discord / Slack…）原地替换为目标语言文本：
 
-- **30 种语言一键切换**（托盘菜单选）：English / 日本語 / 한국어 / 粵語 / Français / Deutsch / Español / Italiano / Português / Русский / العربية / Tiếng Việt / ไทย / Bahasa Indonesia / Türkçe / हिन्दी / Nederlands / Polski / Svenska / Ελληνικά / עברית / فارسی / Українська / Čeština / Dansk / Suomi / Norsk / Magyar / Română / Bahasa Melayu
+- **任意目标语言/翻译风格**（PowerShell 弹框输入任意自然语言描述：「English」「学术英语」「中二日语」「Klingon」皆可，DeepSeek 自适应）：English / 日本語 / 한국어 / 粵語 / Français / Deutsch / Español / Italiano / Português / Русский / العربية / Tiếng Việt / ไทย / Bahasa Indonesia / Türkçe / हिन्दी / Nederlands / Polski / Svenska / Ελληνικά / עברית / فارسی / Українська / Čeština / Dansk / Suomi / Norsk / Magyar / Română / Bahasa Melayu
 - **TSF 级集成**（Text Services Framework）— 不是 IME 上面套层 hook，是 Windows 输入法本体，微信不会闪鬼影光标
 - **后台异步 LLM**（DeepSeek `deepseek-chat`，p99 ~1s）— 中文先落地，翻译来了通过 SendInput VK_BACK + clipboard 静默替换
 - **专业级翻译 prompt**（5 条 rule：避免直译/保留语气/技术术语/俚语自然化/语境推断）
+- **翻译缓存**（重复输入相同中文 → 0 API 调用、~50ms 出结果）
+- **标点直输**（无候选窗，对齐 Microsoft IME 行为）
 
 不是「IME 翻译插件」。是 **fork 整个 Weasel C++ TSF 框架 + librime 引擎，加自研 Rime processor 插件 + 自研 30 国语言切换托盘菜单 + 神仙鱼品牌图标 + 专业翻译 prompt** 的合体输入法产品。
 
@@ -280,16 +282,32 @@ cd ..
 
 ## 版本历史
 
-### v0.3（当前）
+### v0.4（当前）
+- **任意自然语言目标**：切换语言改 PowerShell InputBox 弹框，user 输入任意 DeepSeek 能理解的描述
+  - 标准语言：`English` / `日本語` / `한국어` / `Français` / `粵語`
+  - 风格化：`学术英语` / `商务日语` / `中二风格的日语` / `网络流行语` / `古汉语风格`
+  - 创造性：`Klingon battle prose` / `Spanish chilango` / `火星文` / 任何描述
+- **翻译缓存**：`%APPDATA%\Rime	ypeanything_cache.tsv` 记录 (lang, chinese) → translation
+  - 重复输入相同中文 + 同目标语言 → 直接 paste 缓存，0 API 调用，~50ms 出结果
+  - TSV append-only，last-match-wins 语义；用户用得越多越快
+- **标点直输**：覆盖 punctuator preset，单候选直接出，no popup（对齐 Microsoft IME 行为）
+  - ascii_mode=false (中文): `,` → `，` / `.` → `。` / `(` → `（` / `\` → `、` / `'` 配对 / etc.
+  - ascii_mode=true (英文): 全 ASCII 半角直输
+- 图标 0 margin 紧贴 + 单 size 独立 LANCZOS，神仙鱼填满 16x16/24x24 layer
+- WinSparkle 自动检查彻底删除（不再弹「新版本 0.17.4 可用」跳 rime.im 的 dialog）
+- 切换语言菜单从 server-side popup（Win11 限制下不显示）改 TSF DLL 弹 PS InputBox
+- 删字 bug fix：BackSpace 在 composition 外时 pop accumulated_ 末尾 UTF-8 char；Esc 全清
+- install 脚本 5s 后自动 exit（避免 elevated PS 窗口卡留）
+
+### v0.3
 - 30 语言托盘热切（English / 日本語 / 한국어 / 粵語 + 26 种）
-- 神仙鱼品牌图标全套（托盘 + TSF 语言栏 + 系统区）
-- 托盘菜单 4 项极简：切换语言 / 检查更新 / 重启 / 退出
-- 5 条 rule 专业翻译 prompt（避免直译/保留语气/技术术语/俚语自然化/语境推断）
+- 神仙鱼品牌图标全套
+- 托盘菜单 4 项极简
+- 5 条 rule 专业翻译 prompt
 - 关闭候选窗 status icon
 - 检查更新跳转 GitHub Releases 页面
-- 网络错误时保留中文 + LOG(ERROR)，不静默吞错
-- install 脚本：MoveFileEx pending-on-reboot 兜底 + 轮询 schema 编译完成（非固定 60s 等待）
-- system32\weasel.dll 同步替换（TSF 语言栏图标也变神仙鱼）
+- 网络错误时保留中文 + LOG(ERROR)
+- install 脚本：MoveFileEx pending-on-reboot + 轮询 schema 编译
 
 ---
 

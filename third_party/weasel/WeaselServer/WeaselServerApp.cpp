@@ -95,24 +95,39 @@ void write_lang(const char* code) {
   if (f) f << code;
 }
 
-void show_lang_picker(HWND hwnd) {
-  HMENU menu = CreatePopupMenu();
-  if (!menu) return;
-  for (size_t i = 0; i < sizeof(kLangs) / sizeof(kLangs[0]); ++i) {
-    AppendMenuW(menu, MF_STRING,
-                ID_WEASELTRAY_LANG_BASE + i, kLangs[i].display);
+void show_lang_picker(HWND /*hwnd*/) {
+  // TypeAnything: free-form natural-language target picker via PS InputBox.
+  // User types anything ("English" / "学术英语" / "中二日语" / "Klingon").
+  std::filesystem::path lang_path = lang_file_path();
+  std::wstring lang_file = lang_path.wstring();
+
+  std::wstring ps;
+  ps += L"-NoProfile -WindowStyle Hidden -Command \"";
+  ps += L"Add-Type -AssemblyName Microsoft.VisualBasic;";
+  ps += L"$f='";
+  for (wchar_t c : lang_file) {
+    if (c == L'\'') ps += L"''";
+    else ps += c;
   }
-  POINT pt;
-  GetCursorPos(&pt);
-  SetForegroundWindow(hwnd);
-  UINT cmd = TrackPopupMenu(menu,
-                            TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
-                            pt.x, pt.y, 0, hwnd, NULL);
-  DestroyMenu(menu);
-  if (cmd >= ID_WEASELTRAY_LANG_BASE &&
-      cmd < ID_WEASELTRAY_LANG_BASE + sizeof(kLangs) / sizeof(kLangs[0])) {
-    write_lang(kLangs[cmd - ID_WEASELTRAY_LANG_BASE].code);
-  }
+  ps += L"';";
+  ps += L"$cur=if(Test-Path $f){";
+  ps += L"((Get-Content -LiteralPath $f -Encoding UTF8 -Raw)";
+  ps += L" -split '`r?`n' | Where-Object {$_ -and $_ -notmatch '^\s*#'} | Select-Object -First 1)";
+  ps += L"}else{'English'};";
+  ps += L"if($null -eq $cur){$cur='English'};";
+  ps += L"$msg=\"切换翻译目标 ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` ` `n";
+  ps += L"输入任意自然语言描述，DeepSeek 会按描述翻译。`n`n";
+  ps += L"示例：`n";
+  ps += L"  English / 日本語 / 한국어 / Français / 粵語`n";
+  ps += L"  学术英语 / 商务日语 / 中二风格的日语`n";
+  ps += L"  Klingon battle prose / Spanish chilango`n";
+  ps += L"  古汉语风格 / 网络流行语\";";
+  ps += L"$r=[Microsoft.VisualBasic.Interaction]::InputBox($msg,'TypeAnything 切换语言',$cur);";
+  ps += L"if($r){[System.IO.File]::WriteAllText($f,$r,";
+  ps += L"(New-Object System.Text.UTF8Encoding $false))}\"";
+
+  ShellExecuteW(NULL, L"open", L"powershell.exe", ps.c_str(),
+                NULL, SW_SHOWNORMAL);
 }
 
 }  // namespace

@@ -73,8 +73,79 @@ simplification_filter:
   option_name: simplification
   opencc_config: t2s.json
 
+# Punctuation: direct single mapping. No candidate-popup ever. Mode-aware:
+#   * ascii_mode=true → ASCII / half-width
+#   * ascii_mode=false → 中文 全角 (symmetric quotes auto-paired)
+# This matches Microsoft IME behaviour. Each key emits one candidate so no
+# selection window appears.
 punctuator:
-  import_preset: default
+  full_shape:
+    " " : "　"
+    "," : "，"
+    "." : "。"
+    ";" : "；"
+    ":" : "："
+    "?" : "？"
+    "!" : "！"
+    "\\" : "、"
+    "/" : "／"
+    "(" : "（"
+    ")" : "）"
+    "[" : "「"
+    "]" : "」"
+    "{" : "『"
+    "}" : "』"
+    "<" : "《"
+    ">" : "》"
+    "@" : "@"
+    "#" : "#"
+    "$" : "￥"
+    "%" : "%"
+    "^" : "……"
+    "&" : "&"
+    "*" : "×"
+    "-" : "－"
+    "_" : "——"
+    "=" : "＝"
+    "+" : "＋"
+    "|" : "｜"
+    "`" : "·"
+    "~" : "～"
+    "'" : { pair: [ "'", "'" ] }
+    '"' : { pair: [ "“", "”" ] }
+  half_shape:
+    "," : ","
+    "." : "."
+    ";" : ";"
+    ":" : ":"
+    "?" : "?"
+    "!" : "!"
+    "\\" : "\\"
+    "/" : "/"
+    "(" : "("
+    ")" : ")"
+    "[" : "["
+    "]" : "]"
+    "{" : "{"
+    "}" : "}"
+    "<" : "<"
+    ">" : ">"
+    "@" : "@"
+    "#" : "#"
+    "$" : "$"
+    "%" : "%"
+    "^" : "^"
+    "&" : "&"
+    "*" : "*"
+    "-" : "-"
+    "_" : "_"
+    "=" : "="
+    "+" : "+"
+    "|" : "|"
+    "`" : "`"
+    "~" : "~"
+    "'" : "'"
+    '"' : '"'
 
 key_binder:
   import_preset: default

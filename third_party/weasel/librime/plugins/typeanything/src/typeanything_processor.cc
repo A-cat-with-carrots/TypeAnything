@@ -205,6 +205,70 @@ std::string WinHttpPost(const std::wstring& host,
   return result;
 }
 
+// --- Translation cache (persistent TSV at %APPDATA%\\Rime\\typeanything_cache.tsv) ---
+// Lookup avoids re-calling DeepSeek for (lang, chinese) pairs the user has
+// translated before. Append-only TSV with last-match-wins semantics.
+
+std::wstring CachePath() {
+  wchar_t ad[MAX_PATH] = {0};
+  if (FAILED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, ad))) return L"";
+  return std::wstring(ad) + L"\\Rime\\typeanything_cache.tsv";
+}
+
+std::string SanitizeCache(std::string s) {
+  for (auto& c : s) {
+    if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+  }
+  return s;
+}
+
+std::string LookupCache(const std::string& lang, const std::string& chinese) {
+  std::wstring p = CachePath();
+  if (p.empty()) return "";
+  HANDLE h = CreateFileW(p.c_str(), GENERIC_READ,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) return "";
+  std::string accum;
+  std::string buf;
+  buf.resize(8192);
+  DWORD got = 0;
+  while (ReadFile(h, &buf[0], (DWORD)buf.size(), &got, NULL) && got > 0) {
+    accum.append(buf.data(), got);
+  }
+  CloseHandle(h);
+  std::string key = SanitizeCache(lang) + "\t" + SanitizeCache(chinese) + "\t";
+  std::string match;
+  size_t start = 0;
+  while (start < accum.size()) {
+    size_t eol = accum.find('\n', start);
+    if (eol == std::string::npos) eol = accum.size();
+    if (eol - start >= key.size() &&
+        accum.compare(start, key.size(), key) == 0) {
+      match = accum.substr(start + key.size(), eol - start - key.size());
+    }
+    start = eol + 1;
+  }
+  return match;
+}
+
+void SaveCache(const std::string& lang, const std::string& chinese,
+               const std::string& translation) {
+  std::wstring p = CachePath();
+  if (p.empty()) return;
+  HANDLE h = CreateFileW(p.c_str(), FILE_APPEND_DATA,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                         OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) return;
+  std::string entry = SanitizeCache(lang) + "\t" +
+                      SanitizeCache(chinese) + "\t" +
+                      SanitizeCache(translation) + "\n";
+  DWORD wrote = 0;
+  WriteFile(h, entry.data(), (DWORD)entry.size(), &wrote, NULL);
+  CloseHandle(h);
+}
+
+
 size_t Utf8CodePointCount(const std::string& s) {
   size_t count = 0;
   for (size_t i = 0; i < s.size(); ) {
@@ -324,21 +388,42 @@ std::string TypeAnythingProcessor::ResolveTargetLang() const {
   HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
   if (h == INVALID_HANDLE_VALUE) return default_target_lang_;
-  char buf[64] = {0};
+  // Up to 1024 bytes UTF-8 for free-form natural-language descriptions
+  // ("中二风格的日语" / "Klingon battle prose" / "学术英语" / ...).
+  char buf[1024] = {0};
   DWORD got = 0;
   ReadFile(h, buf, sizeof(buf) - 1, &got, NULL);
   CloseHandle(h);
-  std::string code(buf, got);
-  // strip whitespace
-  while (!code.empty() && (code.back() == '\n' || code.back() == '\r' ||
-                           code.back() == ' ' || code.back() == '\t')) {
-    code.pop_back();
+  std::string raw(buf, got);
+  // First non-empty, non-comment line wins.
+  std::string code;
+  std::string line;
+  for (size_t i = 0; i <= raw.size(); ++i) {
+    char c = (i < raw.size()) ? raw[i] : '\n';
+    if (c == '\n' || c == '\r') {
+      while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) {
+        line.pop_back();
+      }
+      size_t lead = 0;
+      while (lead < line.size() && (line[lead] == ' ' || line[lead] == '\t')) {
+        ++lead;
+      }
+      std::string trimmed = line.substr(lead);
+      if (!trimmed.empty() && trimmed[0] != '#') {
+        code = trimmed;
+        break;
+      }
+      line.clear();
+    } else {
+      line.push_back(c);
+    }
   }
   if (code.empty()) return default_target_lang_;
   for (const auto& l : kLangs) {
     if (code == l.code) return l.full_name;
   }
-  return default_target_lang_;
+  // Free-form: pass through as the LLM's target description.
+  return code;
 }
 
 void TypeAnythingProcessor::OnCommit(rime::Context* ctx) {
@@ -430,9 +515,15 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
             << JsonEscape(chinese) << "\"}"
             << "]}";
 
-    std::string body = WinHttpPost(Utf8ToWide(endpoint),
-                                   Utf8ToWide(path),
-                                   api_key, payload.str());
+    // Cache lookup first — skip API call when (lang, chinese) was translated before.
+    std::string english = LookupCache(lang, chinese);
+
+    std::string body;
+    if (english.empty()) {
+      body = WinHttpPost(Utf8ToWide(endpoint),
+                         Utf8ToWide(path),
+                         api_key, payload.str());
+    }
 
     // If user dispatched another translation since we started, abort.
     if (this_id != request_id_.load()) {
@@ -440,8 +531,7 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
       return;
     }
 
-    std::string english;
-    if (!body.empty()) english = ExtractContent(body);
+    if (english.empty() && !body.empty()) english = ExtractContent(body);
     while (!english.empty() &&
            (english.back() == ' ' || english.back() == '\n' ||
             english.back() == '\r' || english.back() == '\t')) {
@@ -454,6 +544,11 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
                  << "; raw body bytes: " << body.size();
       suppress_capture_.store(false);
       return;
+    }
+
+    // Persist only fresh-from-API results.
+    if (!body.empty() && !english.empty()) {
+      SaveCache(lang, chinese, english);
     }
 
     if (SetClipboardUtf8(english)) {
