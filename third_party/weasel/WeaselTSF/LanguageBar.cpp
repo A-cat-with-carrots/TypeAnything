@@ -4,6 +4,7 @@
 #include <shellapi.h>
 #include "WeaselTSF.h"
 #include "LanguageBar.h"
+#include <shlobj.h>
 #include "CandidateList.h"
 #include <WeaselUtility.h>
 
@@ -293,9 +294,84 @@ std::wstring WeaselTSF::_GetRootDir() {
   return dir;
 }
 
+namespace {
+
+struct LangEntry {
+  const wchar_t* display;
+  const char* code;
+};
+
+static const LangEntry kLangs[] = {
+    {L"English",       "en"},  {L"日本語",     "ja"},
+    {L"한국어",       "ko"},  {L"粵語",         "yue"},
+    {L"Français",      "fr"},  {L"Deutsch",       "de"},
+    {L"Español",       "es"},  {L"Italiano",      "it"},
+    {L"Português",     "pt"},  {L"Русский",       "ru"},
+    {L"العربية",        "ar"},  {L"Tiếng Việt",   "vi"},
+    {L"ไทย",          "th"},  {L"Bahasa Indonesia","id"},
+    {L"Türkçe",       "tr"},  {L"हिन्दी",        "hi"},
+    {L"Nederlands",   "nl"},  {L"Polski",        "pl"},
+    {L"Svenska",      "sv"},  {L"Ελληνικά",      "el"},
+    {L"עברית",       "he"},  {L"فارسی",          "fa"},
+    {L"Українська",     "uk"},  {L"Čeština",       "cs"},
+    {L"Dansk",        "da"},  {L"Suomi",         "fi"},
+    {L"Norsk",        "no"},  {L"Magyar",        "hu"},
+    {L"Română",       "ro"},  {L"Bahasa Melayu", "ms"},
+};
+
+#define ID_LANG_BASE 40100
+
+std::wstring lang_file_path() {
+  PWSTR path_str = nullptr;
+  std::wstring p;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &path_str))) {
+    p = std::wstring(path_str) + L"\Rime\typeanything_lang.txt";
+    CoTaskMemFree(path_str);
+  } else {
+    p = L"typeanything_lang.txt";
+  }
+  return p;
+}
+
+void write_lang_code(const char* code) {
+  std::wstring p = lang_file_path();
+  HANDLE h = CreateFileW(p.c_str(), GENERIC_WRITE, 0, NULL,
+                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) return;
+  DWORD written = 0;
+  WriteFile(h, code, (DWORD)strlen(code), &written, NULL);
+  CloseHandle(h);
+}
+
+void show_lang_picker_in_client(HWND owner) {
+  HMENU menu = CreatePopupMenu();
+  if (!menu) return;
+  for (size_t i = 0; i < sizeof(kLangs) / sizeof(kLangs[0]); ++i) {
+    AppendMenuW(menu, MF_STRING, ID_LANG_BASE + (UINT)i, kLangs[i].display);
+  }
+  POINT pt;
+  GetCursorPos(&pt);
+  SetForegroundWindow(owner);
+  UINT cmd = TrackPopupMenu(menu,
+                            TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
+                            pt.x, pt.y, 0, owner, NULL);
+  DestroyMenu(menu);
+  if (cmd >= ID_LANG_BASE &&
+      cmd < ID_LANG_BASE + sizeof(kLangs) / sizeof(kLangs[0])) {
+    write_lang_code(kLangs[cmd - ID_LANG_BASE].code);
+  }
+}
+
+}  // namespace
+
 void WeaselTSF::_HandleLangBarMenuSelect(UINT wID) {
   std::wstring dir{};
   switch (wID) {
+    case ID_WEASELTRAY_SWITCH_LANG: {
+      HWND focus = _GetFocusedContextWindow();
+      show_lang_picker_in_client(focus ? focus : GetForegroundWindow());
+      return;
+    }
     case ID_WEASELTRAY_RERUN_SERVICE:
     case ID_WEASELTRAY_INSTALLDIR:
       if (RegGetStringValue(HKEY_LOCAL_MACHINE, GetWeaselRegName(),

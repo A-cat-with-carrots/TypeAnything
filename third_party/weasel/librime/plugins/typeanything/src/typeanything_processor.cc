@@ -351,6 +351,31 @@ void TypeAnythingProcessor::OnCommit(rime::Context* ctx) {
 rime::ProcessResult TypeAnythingProcessor::ProcessKeyEvent(
     const rime::KeyEvent& key_event) {
   if (key_event.release()) return rime::kNoop;
+
+  // BackSpace outside composition: user deleting committed Chinese.
+  // Pop the last UTF-8 character from accumulated_ so we don't translate
+  // text that has already been erased from the document.
+  if (key_event.keycode() == XK_BackSpace) {
+    rime::Context* ctx = engine_->context();
+    if (ctx && !ctx->IsComposing() && !accumulated_.empty()) {
+      while (!accumulated_.empty()) {
+        unsigned char b = (unsigned char)accumulated_.back();
+        accumulated_.pop_back();
+        if ((b & 0xC0) != 0x80) break;  // start of a UTF-8 sequence
+      }
+    }
+    return rime::kNoop;  // let BackSpace propagate to the document normally
+  }
+
+  // Escape clears the pending translation buffer entirely.
+  if (key_event.keycode() == XK_Escape && !accumulated_.empty()) {
+    rime::Context* ctx = engine_->context();
+    if (ctx && !ctx->IsComposing()) {
+      accumulated_.clear();
+      return rime::kNoop;
+    }
+  }
+
   if (key_event.keycode() != XK_Return) return rime::kNoop;
   if (api_key_.empty()) return rime::kNoop;
   if (accumulated_.empty()) return rime::kNoop;

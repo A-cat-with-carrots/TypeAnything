@@ -21,17 +21,11 @@ int WeaselServerApp::Run() {
   if (!m_server.Start())
     return -1;
 
-  win_sparkle_set_registry_path("Software\\Rime\\Weasel\\Updates");
-  if (GetThreadUILanguage() ==
-      MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL))
-    win_sparkle_set_lang("zh-TW");
-  else if (GetThreadUILanguage() ==
-           MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED))
-    win_sparkle_set_lang("zh-CN");
-  else
-    win_sparkle_set_lang("en");
-  win_sparkle_init();
-  m_ui.Create(m_server.GetHWnd());
+  // TypeAnything: WinSparkle disabled. Upstream Weasel appcast at
+  // rime.github.io/release/weasel/appcast.xml triggers a startup dialog
+  // that confuses users into reinstalling the original Weasel. We use
+  // ShellExecute to GitHub Releases for manual update checks instead.
+m_ui.Create(m_server.GetHWnd());
 
   m_handler->Initialize();
   m_handler->OnUpdateUI([this]() { tray_icon.Refresh(); });
@@ -44,7 +38,7 @@ int WeaselServerApp::Run() {
   m_handler->Finalize();
   m_ui.Destroy();
   tray_icon.RemoveIcon();
-  win_sparkle_cleanup();
+  // win_sparkle_cleanup() removed (TypeAnything: WinSparkle disabled)
 
   return ret;
 }
