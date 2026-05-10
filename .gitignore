@@ -82,3 +82,6 @@ third_party/weasel/msbuild/
 dist/
 build/
 *.log
+
+# Release staging — built locally, uploaded to GitHub Releases
+release-staging/

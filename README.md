@@ -143,19 +143,10 @@ Rime/typeanything_lang.txt 写入 "fr"
 ```
 TypeAnything/
 ├── README.md                                    本文档
-├── TypeAnything.md                            原始设计文档（PIME 失败 → 切到 Weasel 全过程）
-├── install-typeanything-to-weasel.ps1         一条命令部署脚本（含 MoveFileEx 兜底）
-├── fish.ico                                     神仙鱼品牌图标（multi-res ICO，从 hrdai 网站 logo 转）
-├── pyproject.toml                               Python 原型项目元数据
-├── config.json.example                          LLM 配置模板（API key / model / temperature）
-├── tests/
-│   └── test_state.py                            状态机单元测试（PIME 原型期产物）
-├── legacy/                                     失败方案归档（参考用，非当前在用）
-│   └── typeanything_ime/                        PIME 时代 Python 原型（设计文档见 TypeAnything.md）
-│       ├── typeanything_main.py                 PIME 入口
-│       ├── state.py                             状态机
-│       ├── llm_client.py                        DeepSeek httpx client
-│       └── data/pinyin.dict.yaml                完整拼音词典
+├── LICENSE                                      MIT
+├── install-typeanything-to-weasel.ps1         源码构建路径的部署脚本（含 MoveFileEx 兜底）
+├── Install-TypeAnything.bat                   一键安装包入口（自动 UAC 提权，弹 API key 输入框）
+├── fish.ico                                     神仙鱼品牌图标
 └── third_party/
     └── weasel/                                  fork 自 rime/weasel（C++ TSF 框架）
         ├── WeaselServer/                        托盘 server — 改 4 项菜单 + 30 语言切换弹窗
@@ -289,26 +280,16 @@ cd ..
 
 ## 版本历史
 
-### v0.3 — 30 语言 + 神仙鱼品牌（当前）
-- 30 种语言托盘热切（之前仅 English）
-- 神仙鱼图标全套替换（小狼毫 → 神仙鱼）
-- 托盘菜单减到 4 项（之前 9 项）
-- 5 条 rule 专业翻译 prompt（之前默认）
-- 关闭候选窗 status icon（用户反馈「太丑」）
-- 删「维护中」气泡通知
-- install 脚本加 MoveFileEx pending-on-reboot 兜底
-
-### v0.2 — Plan G fork Weasel
-- 完全 fork Weasel C++ TSF 框架（之前 PIME Plan F2）
-- 自研 Rime processor 插件（典型 librime BUILD_MERGED_PLUGINS）
-- WinHttp 异步 LLM + SendInput 替换（之前同步阻塞）
-- xmake 替代 msbuild（绕 .NET FileTracker TypeInitializationException）
-
-### v0.1 — Plan F2 PIME 原型
-- Python PIME backend，httpx sync DeepSeek
-- 状态机 + 20 单元测试
-- 微信 ghost cursor → **PIME 不可用** → 弃案
-- 完整设计文档见 `TypeAnything.md`
+### v0.3（当前）
+- 30 语言托盘热切（English / 日本語 / 한국어 / 粵語 + 26 种）
+- 神仙鱼品牌图标全套（托盘 + TSF 语言栏 + 系统区）
+- 托盘菜单 4 项极简：切换语言 / 检查更新 / 重启 / 退出
+- 5 条 rule 专业翻译 prompt（避免直译/保留语气/技术术语/俚语自然化/语境推断）
+- 关闭候选窗 status icon
+- 检查更新跳转 GitHub Releases 页面
+- 网络错误时保留中文 + LOG(ERROR)，不静默吞错
+- install 脚本：MoveFileEx pending-on-reboot 兜底 + 轮询 schema 编译完成（非固定 60s 等待）
+- system32\weasel.dll 同步替换（TSF 语言栏图标也变神仙鱼）
 
 ---
 
@@ -321,7 +302,7 @@ cd ..
 - **错误 toast**：API 失败时托盘气泡提示
 - **离线 fallback**：本地小 model（Qwen 1.5B）做兜底翻译
 
-PR 前先看 `TypeAnything.md` 了解架构史 + 失败模式沉淀。
+PR 前请阅 `third_party/weasel/librime/plugins/typeanything/src/typeanything_processor.cc` 了解核心翻译/替换链路。
 
 ---
 

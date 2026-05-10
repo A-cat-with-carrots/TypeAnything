@@ -16,7 +16,11 @@ param(
   [string]$OurRimeDll  = "D:\hrdai\aiForType\third_party\weasel\librime\dist\lib\rime.dll",
   [string]$SchemaSrc   = "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.schema.yaml",
   [string]$RimeUserDir = (Join-Path $env:APPDATA "Rime"),
-  [string]$TargetLang  = "English"
+  [string]$TargetLang  = "English",
+  # When set, look for prebuilt rime.dll/weaselx64.dll/WeaselServer.exe/
+  # WeaselDeployer.exe directly in this directory (release-bundle layout).
+  # When unset, fall back to the source-tree layout under $BuildRoot.
+  [string]$BundleBinariesDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -113,18 +117,29 @@ function Copy-LockedOrPending {
 $script:RebootNeeded = $false
 
 Copy-LockedOrPending $OurRimeDll (Join-Path $WeaselDir "rime.dll") "rime.dll" | Out-Null
-$buildBin = Join-Path $BuildRoot "build\windows\x64\release"
-foreach ($pair in @(
-    @("WeaselTSF\weaselx64.dll",       "weaselx64.dll"),
-    @("WeaselServer\WeaselServer.exe", "WeaselServer.exe"),
-    @("WeaselDeployer\WeaselDeployer.exe", "WeaselDeployer.exe")
-)) {
-    $src = Join-Path $buildBin $pair[0]
-    $dst = Join-Path $WeaselDir $pair[1]
-    if (Test-Path $src) {
-        Copy-LockedOrPending $src $dst $pair[1] | Out-Null
+
+# Resolve binary paths: bundle layout (flat) vs source-tree layout (nested).
+if ($BundleBinariesDir) {
+    $pairs = @(
+        @{Src=(Join-Path $BundleBinariesDir "weaselx64.dll");        Dst=(Join-Path $WeaselDir "weaselx64.dll")},
+        @{Src=(Join-Path $BundleBinariesDir "WeaselServer.exe");     Dst=(Join-Path $WeaselDir "WeaselServer.exe")},
+        @{Src=(Join-Path $BundleBinariesDir "WeaselDeployer.exe");   Dst=(Join-Path $WeaselDir "WeaselDeployer.exe")}
+    )
+    $srcTSF = Join-Path $BundleBinariesDir "weaselx64.dll"
+} else {
+    $buildBin = Join-Path $BuildRoot "build\windows\x64\release"
+    $pairs = @(
+        @{Src=(Join-Path $buildBin "WeaselTSF\weaselx64.dll");          Dst=(Join-Path $WeaselDir "weaselx64.dll")},
+        @{Src=(Join-Path $buildBin "WeaselServer\WeaselServer.exe");    Dst=(Join-Path $WeaselDir "WeaselServer.exe")},
+        @{Src=(Join-Path $buildBin "WeaselDeployer\WeaselDeployer.exe");Dst=(Join-Path $WeaselDir "WeaselDeployer.exe")}
+    )
+    $srcTSF = Join-Path $buildBin "WeaselTSF\weaselx64.dll"
+}
+foreach ($p in $pairs) {
+    if (Test-Path $p.Src) {
+        Copy-LockedOrPending $p.Src $p.Dst (Split-Path $p.Dst -Leaf) | Out-Null
     } else {
-        Write-Warning "    missing build artifact: $src"
+        Write-Warning "    missing artifact: $($p.Src)"
     }
 }
 
@@ -133,7 +148,6 @@ foreach ($pair in @(
 # becomes the angelfish, not the original Weasel glyph.
 $sys32Dll = "C:\WINDOWS\system32\weasel.dll"
 $sys32Bak = "$sys32Dll.bak"
-$srcTSF = Join-Path $buildBin "WeaselTSF\weaselx64.dll"
 if ((Test-Path $sys32Dll) -and -not (Test-Path $sys32Bak)) {
     Copy-Item $sys32Dll $sys32Bak -Force
 }
