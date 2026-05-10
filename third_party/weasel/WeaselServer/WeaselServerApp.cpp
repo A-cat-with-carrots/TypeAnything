@@ -128,7 +128,7 @@ void show_lang_picker(HWND /*hwnd*/) {
   ps += L"【虚构/自定义】AI 自由发挥`n";
   ps += L"   像鲁迅一样的英语 / 像周杰伦歌词 / 港片黑帮台词`n";
   ps += L"   Klingon battle prose / 火星文 / Spanish chilango\";";
-  ps += L"$r=[Microsoft.VisualBasic.Interaction]::InputBox($msg,'输入法大王 - 切换语言',$cur);";
+  ps += L"$r=[Microsoft.VisualBasic.Interaction]::InputBox($msg,'TypeAnything 切换语言',$cur);";
   ps += L"if($r){[System.IO.File]::WriteAllText($f,$r,";
   ps += L"(New-Object System.Text.UTF8Encoding $false))}\"";
 

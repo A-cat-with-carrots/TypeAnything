@@ -1,4 +1,4 @@
-# 输入法大王 / TypeAnything
+# TypeAnything
 
 > **打拼音，落地任何语言、任何圈层、任何风格。**
 > Type Chinese pinyin → press Enter → AI rewrites it as English / 留学生式中英夹杂 / 金融式说话 / 学术体 / 港片台词 / Klingon — anything you can describe.
@@ -10,7 +10,7 @@
 
 ---
 
-## 这不仅是翻译输入法。更是**输入法大王**。
+## 这不仅是翻译输入法。更是**全能输入法**。
 
 你打中文：
 
@@ -84,7 +84,7 @@ B站弹幕体 / 抖音口播体 / 朋友圈鸡汤体 / 营销号体
 Klingon battle prose / 火星文 / Spanish chilango / Cockney slang
 ```
 
-**你能用一句话描述的口吻，输入法大王 就能给你那个口吻。**
+**你能用一句话描述的口吻，TypeAnything 就能给你那个口吻。**
 
 ---
 
