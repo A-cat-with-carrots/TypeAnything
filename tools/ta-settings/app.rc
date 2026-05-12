@@ -1,0 +1,5 @@
+// Window / app icon (神仙鱼). Windows automatically picks the first
+// numerically-lowest IDI_ICON resource for the executable file icon
+// AND the default window class icon, so this single line is enough.
+
+1 ICON "fish.ico"

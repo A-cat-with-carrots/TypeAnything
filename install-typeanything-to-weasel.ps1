@@ -193,7 +193,7 @@ if (-not $taExeSrc) {
     $uiDst = Join-Path $WeaselDir "ui"
     if (Test-Path $uiSrc) {
         New-Item -ItemType Directory -Force -Path $uiDst | Out-Null
-        foreach ($f in @("index.html", "style.css", "app.js")) {
+        foreach ($f in @("index.html", "style.css", "app.js", "fish.png")) {
             $s = Join-Path $uiSrc $f
             if (Test-Path $s) { Copy-Item $s (Join-Path $uiDst $f) -Force }
         }

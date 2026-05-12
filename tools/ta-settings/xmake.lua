@@ -8,6 +8,7 @@ target("ta-settings")
   add_ldflags("/SUBSYSTEM:WINDOWS", "/ENTRY:wWinMainCRTStartup", {force = true})
 
   add_files("main.cpp")
+  add_files("app.rc")
 
   -- WebView2 SDK (vendored, x64 only).
   add_includedirs("vendor/webview2/include")

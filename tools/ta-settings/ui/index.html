@@ -4,17 +4,17 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TypeAnything</title>
+<link rel="icon" type="image/png" href="fish.png" />
 <link rel="stylesheet" href="style.css" />
 </head>
-<body data-theme="auto">
+<body>
 
-<!-- title bar (drag region) -->
+<!-- ─── Titlebar ─────────────────────────────────────────────── -->
 <header class="titlebar">
   <div class="title">
-    <span class="logo">𓆟</span>
-    <span class="brand">TypeAnything</span>
-    <span class="sep">·</span>
-    <span id="pageTitle" class="page-title">切换语言</span>
+    <span class="logo" aria-hidden="true"></span>
+    <span class="brand">神仙鱼<em>TypeAnything</em></span>
+    <span id="pageTitle" class="page-title">切换风格</span>
   </div>
   <button class="x" id="btnClose" title="关闭 (Esc)">×</button>
 </header>
@@ -23,16 +23,18 @@
 
   <!-- ───────────────────────── PAGE: LANGUAGE ───────────────────────── -->
   <section class="page" id="page-lang">
-    <h1>你说什么口吻 <span class="accent">AI</span> 就给你什么口吻</h1>
-    <p class="sub">输入任意自然语言描述。下次按 Enter 翻译时即按此风格落地。</p>
+    <p class="eyebrow">SWITCH TARGET</p>
+    <h1>你说什么<span class="accent">口吻</span>，AI 就给你什么口吻。</h1>
+    <p class="sub">输入任意自然语言描述，下次按 <code>Enter</code> 翻译时即按此风格落地。可以是语种、圈层、文体，甚至「像鲁迅一样的英语」。</p>
 
     <div class="input-wrap">
       <input id="langInput" type="text" placeholder="例如：金融式说话 / 像鲁迅一样的英语 / Klingon" autofocus />
       <button id="langSave" class="btn primary">保存</button>
     </div>
+    <p class="default-hint">不填则使用默认 <code>English</code>。</p>
 
     <div class="category">
-      <h3>🌐 语种</h3>
+      <h3>语种</h3>
       <div class="chips" data-group="lang">
         <button class="chip">English</button>
         <button class="chip">日本語</button>
@@ -48,7 +50,7 @@
     </div>
 
     <div class="category">
-      <h3>🎭 圈层风格</h3>
+      <h3>圈层风格</h3>
       <div class="chips" data-group="clique">
         <button class="chip">金融式说话</button>
         <button class="chip">留学生式说话</button>
@@ -66,7 +68,7 @@
     </div>
 
     <div class="category">
-      <h3>🎬 场景 / 文体</h3>
+      <h3>场景 / 文体</h3>
       <div class="chips" data-group="medium">
         <button class="chip">学术英语</button>
         <button class="chip">商务日语</button>
@@ -82,7 +84,7 @@
     </div>
 
     <div class="category">
-      <h3>🪐 虚构 / 自定义</h3>
+      <h3>虚构 / 自定义</h3>
       <div class="chips" data-group="fictional">
         <button class="chip">像鲁迅一样的英语</button>
         <button class="chip">像周杰伦歌词</button>
@@ -99,24 +101,25 @@
 
   <!-- ───────────────────────── PAGE: MODEL ─────────────────────────── -->
   <section class="page" id="page-model" hidden>
-    <h1>接入你自己的 <span class="accent">模型</span></h1>
-    <p class="sub">你的输入只发到下面这个 endpoint。无中转，无后端代理。</p>
+    <p class="eyebrow">PROVIDER · BYOK</p>
+    <h1>接入你自己的<span class="accent">模型</span>。</h1>
+    <p class="sub">你的输入只发到下面这个 endpoint。无中转、无后端代理。默认 DeepSeek，可换 OpenAI / Moonshot / 智谱 / 自托管 vLLM / Ollama 等任意 OpenAI Chat Completions 兼容 API。</p>
 
     <div class="preset-row">
-      <label class="preset-label">快速预设：</label>
+      <span class="preset-label">预设</span>
       <button class="preset" data-preset="deepseek">DeepSeek</button>
       <button class="preset" data-preset="openai">OpenAI</button>
       <button class="preset" data-preset="moonshot">Moonshot</button>
       <button class="preset" data-preset="zhipu">智谱</button>
-      <button class="preset" data-preset="ollama">Ollama (本地)</button>
+      <button class="preset" data-preset="ollama">Ollama</button>
     </div>
 
-    <form id="modelForm" class="form">
+    <form id="modelForm" class="form" onsubmit="return false;">
       <label>
         <span>API Key</span>
         <div class="masked">
           <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
-          <button type="button" class="toggle" id="toggleKey" title="显示 / 隐藏">👁</button>
+          <button type="button" class="toggle" id="toggleKey" title="显示 / 隐藏" aria-label="toggle">👁</button>
         </div>
       </label>
       <label>
@@ -131,11 +134,10 @@
         <span>Path</span>
         <input id="path" type="text" placeholder="/v1/chat/completions" />
       </label>
+      <p class="hint">
+        <a href="javascript:void(0)" id="getKeyLink">↗ 前往 DeepSeek 注册 + 充值 + 拿 API key</a>
+      </p>
     </form>
-
-    <div class="hint">
-      <a href="javascript:void(0)" id="getKeyLink">↗ 前往 DeepSeek 注册 + 充值 + 拿 API key</a>
-    </div>
 
     <div class="actions">
       <button class="btn" id="btnCancelModel">取消</button>

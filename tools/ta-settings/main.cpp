@@ -333,7 +333,16 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   // Webview window (Edge WebView2).
   webview::webview w(true /* debug */, nullptr);
   w.set_title("TypeAnything");
-  w.set_size(640, page == "model" ? 640 : 740, WEBVIEW_HINT_NONE);
+  if (page == "model") {
+    // Compact form layout — 4 fields + 2 buttons fit without empty space.
+    w.set_size(620, 560, WEBVIEW_HINT_NONE);
+    w.set_size(560, 480, WEBVIEW_HINT_MIN);
+  } else {
+    // Language picker scrolls; pick a comfortable initial height that shows
+    // 2-3 categories without forcing scroll on first view.
+    w.set_size(680, 740, WEBVIEW_HINT_NONE);
+    w.set_size(560, 540, WEBVIEW_HINT_MIN);
+  }
 
   // ─── Native bridge ────────────────────────────────────────
   w.bind("nativeReadLang", [](const std::string& /*args*/) -> std::string {

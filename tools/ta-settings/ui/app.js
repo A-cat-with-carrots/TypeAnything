@@ -29,7 +29,7 @@ function showPage(name) {
   const el = document.getElementById("page-" + name);
   if (el) el.hidden = false;
   document.getElementById("pageTitle").textContent =
-    name === "model" ? "模型配置" : "切换语言";
+    name === "model" ? "模型配置" : "切换风格";
 }
 
 function toast(msg, kind = "ok") {
@@ -49,11 +49,15 @@ async function initLangPage() {
   const input = document.getElementById("langInput");
   const saveBtn = document.getElementById("langSave");
 
-  // Pre-fill from current lang.txt
+  // Pre-fill from current lang.txt; fall back to "English".
   try {
     const cur = await window.nativeReadLang();
-    if (cur) input.value = cur;
-  } catch (e) {}
+    if (cur && cur.trim()) input.value = cur.trim();
+    else                    input.value = "English";
+  } catch (e) {
+    input.value = "English";
+  }
+  input.select();
 
   // Click chip → fill input
   document.querySelectorAll(".chip").forEach(c => {
