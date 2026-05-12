@@ -194,48 +194,43 @@ cd TypeAnything
 ### 托盘菜单（右键鱼图标 / TSF 输入法图标）
 
 ```
-切换语言  (L)   ← 弹框输入任意自然语言目标
-模型配置  (M)   ← WinForms 弹框配置 4 字段：API Key / Model / Host / Path
-检查更新  (U)   ← 打开 GitHub Releases
+切换风格  (L)   ← 打开「切换风格」WebView2 面板
+模型配置  (M)   ← 打开「模型配置」WebView2 面板
+检查更新  (U)   ← 打开 GitHub Releases 页
 ```
 
-### 切换目标风格
+两项核心交互都由 `ta-settings.exe`（独立 WebView2 应用）承载，**不再走 PowerShell / WinForms**。深色 Fluent 设计沿用 [type.hrdai.cn](https://type.hrdai.cn) 品牌：teal `#15212a` 底 / 金 `#d4b27a` accent / Noto Serif SC 中文衬线 / Inter 英文 sans。
 
-```
-右键 → 切换语言 → 弹框 → 输入任何描述
-↓
-%APPDATA%\Rime\typeanything_lang.txt 第一行更新
-↓
-下次 Enter 触发翻译时 processor 重读文件 → AI 按新描述翻译
-```
+### 切换风格
 
-弹框示例描述：
-- `English` / `日本語`
-- `金融式说话` / `留学生式说话` / `互联网黑话`
-- `古汉语风格` / `小红书种草体`
-- `像鲁迅一样的英语` / `Klingon battle prose`
-- 任何你能想到的描述
+右键 → **切换风格** 弹出面板，按 4 大类列出 chip：
+
+- **🌐 语种** — English / 日本語 / 한국어 / Français / Deutsch / Español / 粵語 / Türkçe / ...
+- **🎭 圈层风格** — 金融式说话 / 留学生式说话 / 互联网黑话 / 程序员式说话 / 学术大佬式 / HR 式 / 销售式 / 二次元 / 东北话 / 港式中文 / 台湾腔 / 老北京话
+- **🎬 场景 / 文体** — 学术英语 / 商务日语 / 古汉语风格 / 网络流行语 / 知乎体 / 小红书种草体 / 公众号文章体 / B 站弹幕体 / 抖音口播体 / 营销号体
+- **🪐 虚构 / 自定义** — 像鲁迅一样的英语 / 像周杰伦歌词 / 港片黑帮台词 / Klingon battle prose / Spanish chilango / 火星文 / ...
+
+也可在输入框直接键入任意描述（默认 placeholder `English`，留空即默认）。保存后写到 `%APPDATA%\Rime\typeanything_lang.txt`，下次 Enter 触发翻译时 processor 重读文件，AI 按新描述翻译。
 
 ### 模型配置（接入自己的模型）
 
-```
-右键 → 模型配置 → WinForms 弹框 → 改 4 字段 → 保存并应用
-```
-
-字段：
+右键 → **模型配置** 弹出表单，5 个 provider 一键预设 + 4 个字段：
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| **API Key** | （安装时填的） | 你自己的 API key（mask 显示，可勾「显示」） |
-| **Model** | `deepseek-chat` | 模型名（`gpt-4o` / `moonshot-v1-8k` / `qwen2.5:7b` / 任意） |
-| **Host** | `api.deepseek.com` | 服务 host（`api.openai.com` / `api.moonshot.cn` / `localhost:11434`） |
+| **API Key** | 安装时填的 | 你自己的 API key（mask 显示，可勾「显示」眼睛按钮） |
+| **Model** | `deepseek-chat` | 模型名（`gpt-4o` / `moonshot-v1-8k` / `glm-4-flash` / `qwen2.5:7b` / 任意） |
+| **Host** | `api.deepseek.com` | 服务 host（`api.openai.com` / `api.moonshot.cn` / `open.bigmodel.cn` / `localhost:11434`） |
 | **Path** | `/v1/chat/completions` | OpenAI Chat Completions 兼容协议 |
 
-保存后：
-- 直接写到 `%APPDATA%\Rime\typeanything.schema.yaml`
-- 自动重启 WeaselServer 让新配置生效（无需注销重登）
+预设按钮一键填充：**DeepSeek** / **OpenAI** / **Moonshot** / **智谱** / **Ollama**（本地）。
 
-**隐私保证**：你的输入只发到上面这个 endpoint，没有中转代理 / shared backend / vendor lock-in。换 provider 一行配置搞定。
+保存后：
+- 写到 `%APPDATA%\Rime\typeanything.schema.yaml`（仅本机，没有上传）
+- 自动 kill + 重启 WeaselServer 让 processor 重读新配置
+- 秒级生效
+
+**隐私保证**：你的输入只发到你填的 endpoint，没有中转代理 / shared backend / vendor lock-in。换 provider 改一行就好。
 
 ### 拼音 → 汉字 自学习
 
@@ -268,23 +263,36 @@ schema 覆盖 punctuator preset，对齐 Microsoft IME 行为：
 TypeAnything/
 ├── README.md                                    本文档
 ├── LICENSE                                      MIT
-├── install-typeanything-to-weasel.ps1         源码构建路径的部署脚本
-├── Install-TypeAnything.bat                   一键安装包入口（UAC + GUI）
-├── Install-TypeAnything.ps1                   GUI 包装
-├── model-config.ps1                            托盘「模型配置」菜单弹的 WinForms 弹框
-├── fish.ico                                     神仙鱼品牌图标
+├── install-typeanything-to-weasel.ps1          源码构建路径的部署脚本
+├── Install-TypeAnything.bat                    一键安装包入口（UAC + GUI）
+├── Install-TypeAnything.ps1                    GUI 包装
+├── fish.ico                                    神仙鱼品牌图标
+├── tools/
+│   └── ta-settings/                            托盘菜单的 WebView2 UI ★ 新
+│       ├── main.cpp                            webview 宿主 + JS↔C++ bridge
+│       ├── app.rc                              fish.ico embed → 窗口 / 任务栏图标
+│       ├── ui/
+│       │   ├── index.html                      SPA: ?page=lang | ?page=model
+│       │   ├── style.css                       hrdai dark editorial (teal+金)
+│       │   ├── app.js                          chips/preset 逻辑 + bridge 调用
+│       │   └── fish.png                        title bar logo
+│       ├── vendor/
+│       │   ├── webview.h                       zserge/webview v0.10 single-header MIT
+│       │   └── webview2/                       Microsoft.Web.WebView2 SDK
+│       ├── xmake.lua + _build.ps1              build script
+│       └── fish.ico
 └── third_party/
     └── weasel/                                  fork 自 rime/weasel
         ├── WeaselServer/
-        │   └── WeaselServerApp.cpp              ★ 切换语言 PS InputBox
+        │   └── WeaselServerApp.cpp              ★ ShellExecute ta-settings.exe
         ├── WeaselTSF/
-        │   ├── LanguageBar.cpp                  ★ 切换语言 PS InputBox（客户端进程）
-        │   └── WeaselTSF.rc                     ★ 4 项菜单
+        │   ├── LanguageBar.cpp                  ★ ShellExecute ta-settings.exe
+        │   └── WeaselTSF.rc                     ★ 3 项菜单
         ├── WeaselUI/
         │   └── WeaselPanel.cpp                  ★ 候选窗 status icon 关掉
         ├── resource/                            ★ 6 个 ICO 神仙鱼 + 中/A 模式徽章
         ├── include/
-        │   └── resource.h                       ★ 加 ID_WEASELTRAY_SWITCH_LANG
+        │   └── resource.h                       ★ ID_WEASELTRAY_SWITCH_LANG + MODEL_CONFIG
         └── librime/plugins/typeanything/        ★ 我们的 Rime 插件
             ├── src/
             │   ├── typeanything_processor.cc    ★ ResolveTargetLang 自由格式 + 异步翻译
@@ -360,6 +368,7 @@ cd ..
 
 - **macOS / Linux 暂不支持** — 需用 squirrel (macOS) / fcitx-rime (Linux) 重新 fork
 - **新 weaselx64.dll 真生效需注销重登** — 旧 dll 被每个文本输入进程持锁
+- **WebView2 runtime** — 设置面板依赖 Edge WebView2（Win10 20H1+ / Win11 默认装；Win10 老版本需手动装一次）
 - **Switch Language 改后已打的字不回译** — 只影响下次 Enter 触发
 - **网络断 / API 报错时保留中文 + LOG(ERROR)** — 不静默吞错
 - **首次 schema build ~3-5s** — librime 编译 luna_pinyin.table.bin (13MB)
@@ -369,21 +378,26 @@ cd ..
 
 ## 版本历史
 
-### v0.4.x（当前）
+### v0.5（当前）
+- **WebView2 设置面板** — 托盘的「切换风格」+「模型配置」从 PowerShell InputBox / WinForms 改为独立 `ta-settings.exe` 嵌 WebView2 + HTML/CSS
+  - hrdai dark editorial 设计（teal `#15212a` + 金 `#d4b27a`，Noto Serif SC 衬线 + Inter sans）
+  - 神仙鱼 ICO 嵌入资源 → 窗口 / 任务栏图标
+  - chip / preset hover 金描边、active 金底深字
+  - JS ↔ C++ bridge：read/write schema yaml & lang.txt，保存自动重启 WeaselServer
+  - WebView2 user-data folder 强制走 `%LOCALAPPDATA%\TypeAnything\WebView2`（避开 Program Files 只读）
+  - 标点直输（schema yaml 覆盖 punctuator preset，对齐 Microsoft IME）
+  - 取消所有 PowerShell spawn — 不再受 PS 冷启动 / 沙箱进程拦截影响
+
+### v0.4
 - **任意自然语言目标** — 切换语言改 PowerShell InputBox，user 输入任意 AI 能理解的描述
   - 4 大类：语种 / 圈层风格 / 场景文体 / 虚构自定义
   - **金融式说话 / 留学生式说话 / 互联网黑话** 等圈层风格是核心卖点
-- **模型配置 GUI** — 托盘菜单加「模型配置」项，弹 WinForms 4 字段表单（API Key / Model / Host / Path）
-  - 直接写 schema yaml + 自动重启 server，新配置秒级生效
-  - 内置 cheat sheet：DeepSeek / OpenAI / Moonshot / Ollama 常见组合
-  - 隐私保证：每个用户用自己的 API key 直连，无中转代理
+- **模型配置 GUI** — 第一版用 WinForms（已在 v0.5 替换为 WebView2）
 - **拼音→汉字 自学习强化** — Rime user_dict 增强（encoder/sentence/completion/initial_quality）
-- **标点直输** — schema 覆盖 punctuator preset，单候选直接出，对齐 Microsoft IME
-- **图标 0 margin 紧贴**，每 size 独立 LANCZOS 渲染
-- 托盘菜单减到 3 项（删除 重启 / 退出 — 用户极少手动执行）
-- WinSparkle 自动检查彻底删除（不再弹「新版本 0.17.4」跳 rime.im）
-- 切换语言菜单从 server-side popup 改 TSF DLL 弹 PS InputBox
-- 删字 bug fix：BackSpace 在 composition 外时 pop accumulated_ 末尾 UTF-8 char
+- 图标 0 margin 紧贴
+- 托盘菜单减到 3 项
+- WinSparkle 自动检查彻底删除
+- 删字 bug fix
 - install 脚本 5s 后自动 exit
 
 ### v0.3

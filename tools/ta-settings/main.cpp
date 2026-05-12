@@ -31,7 +31,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <regex>
 
 #include "vendor/webview.h"
 
@@ -177,28 +176,74 @@ static std::vector<std::string> ParseJsonStringArray(const std::string& json) {
 
 // ─── Schema yaml field accessors ─────────────────────────────
 
+// Find first line whose trimmed-left form looks like `<key>:` and return
+// the value to the right (with surrounding quotes/whitespace stripped).
+// Plain string scan — MSVC's std::regex flavor doesn't understand the
+// `(?m)` inline modifier and throws std::regex_error, which is why the
+// earlier regex-based version crashed the model page on launch.
 static std::string ExtractYamlField(const std::string& yaml, const std::string& key) {
-  // Match indented "  <key>: <value>" inside the typeanything block. Permissive.
-  std::regex re("(?m)^[ \\t]*" + key + ":\\s*\"?([^\"\\r\\n]*)\"?\\s*$");
-  std::smatch m;
-  if (std::regex_search(yaml, m, re)) {
-    std::string v = m[1].str();
-    while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
-    return v;
+  size_t i = 0;
+  while (i < yaml.size()) {
+    size_t eol = yaml.find('\n', i);
+    if (eol == std::string::npos) eol = yaml.size();
+    std::string line = yaml.substr(i, eol - i);
+    i = eol + 1;
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t'))
+      line.pop_back();
+    size_t lead = 0;
+    while (lead < line.size() && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
+    if (lead + key.size() + 1 > line.size()) continue;
+    if (line.compare(lead, key.size(), key) != 0) continue;
+    if (line[lead + key.size()] != ':') continue;
+    // Skip whitespace after colon.
+    size_t v = lead + key.size() + 1;
+    while (v < line.size() && (line[v] == ' ' || line[v] == '\t')) ++v;
+    std::string val = line.substr(v);
+    // Strip wrapping double quotes.
+    if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
+      val = val.substr(1, val.size() - 2);
+    }
+    return val;
   }
   return "";
 }
 
+// Replace the value portion of `<indent><key>:<spaces>...` on the first
+// matching line. Quoted controls whether the new value is wrapped in "".
 static std::string ReplaceYamlField(const std::string& yaml,
                                     const std::string& key,
                                     const std::string& val,
                                     bool quoted) {
-  std::regex re("(?m)^([ \\t]*" + key + ":\\s*).*$");
-  std::string replaced;
-  if (quoted) replaced = "$1\"" + val + "\"";
-  else        replaced = "$1" + val;
-  return std::regex_replace(yaml, re, replaced,
-                            std::regex_constants::format_first_only);
+  std::string out;
+  out.reserve(yaml.size() + val.size() + 8);
+  size_t i = 0;
+  bool replaced = false;
+  while (i < yaml.size()) {
+    size_t eol = yaml.find('\n', i);
+    bool has_nl = (eol != std::string::npos);
+    if (!has_nl) eol = yaml.size();
+    std::string line = yaml.substr(i, eol - i);
+    bool did = false;
+    if (!replaced) {
+      size_t lead = 0;
+      while (lead < line.size() && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
+      if (lead + key.size() + 1 <= line.size()
+          && line.compare(lead, key.size(), key) == 0
+          && line[lead + key.size()] == ':') {
+        size_t v = lead + key.size() + 1;
+        while (v < line.size() && (line[v] == ' ' || line[v] == '\t')) ++v;
+        std::string head = line.substr(0, v);
+        std::string new_val = quoted ? "\"" + val + "\"" : val;
+        out += head + new_val;
+        replaced = true;
+        did = true;
+      }
+    }
+    if (!did) out += line;
+    if (has_nl) out += '\n';
+    i = eol + 1;
+  }
+  return out;
 }
 
 // ─── Server restart after schema change ──────────────────────
@@ -330,17 +375,32 @@ static void ApplyMica(HWND hwnd) {
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   std::string page = GetPageArg();
 
+  // WebView2 needs a writable user-data folder. Its default is alongside
+  // the exe, which is C:\Program Files\Rime\weasel-0.17.4 (read-only).
+  // Force it under %LOCALAPPDATA%\TypeAnything\WebView2 instead.
+  {
+    wchar_t lad[MAX_PATH] = {0};
+    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, lad))) {
+      std::wstring ud = std::wstring(lad) + L"\\TypeAnything\\WebView2";
+      std::error_code ec;
+      fs::create_directories(ud, ec);
+      SetEnvironmentVariableW(L"WEBVIEW2_USER_DATA_FOLDER", ud.c_str());
+    }
+  }
+
   // Webview window (Edge WebView2).
   webview::webview w(true /* debug */, nullptr);
   w.set_title("TypeAnything");
   if (page == "model") {
-    // Compact form layout — 4 fields + 2 buttons fit without empty space.
-    w.set_size(620, 560, WEBVIEW_HINT_NONE);
-    w.set_size(560, 480, WEBVIEW_HINT_MIN);
+    // 4 form fields + preset row + intro + get-key link + bottom buttons.
+    // Tested heights: 720 fits all content without scroll on a 1080p
+    // display with 100% scaling.
+    w.set_size(660, 620, WEBVIEW_HINT_NONE);
+    w.set_size(560, 540, WEBVIEW_HINT_MIN);
   } else {
-    // Language picker scrolls; pick a comfortable initial height that shows
-    // 2-3 categories without forcing scroll on first view.
-    w.set_size(680, 740, WEBVIEW_HINT_NONE);
+    // Language picker is intentionally scrollable; pick a comfortable
+    // initial height that shows 2-3 chip categories.
+    w.set_size(700, 760, WEBVIEW_HINT_NONE);
     w.set_size(560, 540, WEBVIEW_HINT_MIN);
   }
 
