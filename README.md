@@ -326,22 +326,6 @@ typeanything:
 
 **支持任意 OpenAI Chat Completions 兼容 API**：DeepSeek / OpenAI / Moonshot / 阶跃 / 智谱 / 任何 self-hosted vLLM / Ollama 等。Anthropic `/v1/messages` 协议不同，需改 processor 的请求 builder。
 
-### 改翻译 prompt
-
-`typeanything_processor.cc` 里 `kSystemPrompt` 字符串（5 条 rule 在那）。
-
-### 改图标
-
-```python
-from PIL import Image
-im = Image.open("your-logo.png").convert("RGBA")
-im.save("fish.ico", format="ICO",
-        sizes=[(16,16),(20,20),(24,24),(32,32),(40,40),(48,48),
-               (64,64),(96,96),(128,128),(256,256)])
-```
-
-替换 `third_party/weasel/resource/weasel.ico` + `fish.ico` + 其他 5 个 ICO。
-
 ---
 
 ## 从源码构建
