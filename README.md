@@ -355,7 +355,6 @@ cd ..
 - **WebView2 runtime 依赖** — 设置面板用 Edge WebView2。Win10 20H1+ / Win11 默认装；老 Win10 (1909/1903) 需手动装一次
 - **切换风格只影响下次 Enter** — processor 在 Enter 触发时才重读 `typeanything_lang.txt`，已落地的文本不回译
 - **首次启动 schema 编译 ~3-5s** — librime 首次编译 `luna_pinyin.table.bin` (13MB)，仅一次性
-- **微信 / 飞书等富文本编辑器兼容性未全量验证** — TSF 框架级集成相比 sidecar/hook 方案更稳，但具体应用的 IME 体验依赖该应用对 TSF 的实现；如遇问题请提 issue。微信内嵌小程序的 webview 走 Chromium 自家 IME 路径，不经我们 TSF
 
 ---
 
