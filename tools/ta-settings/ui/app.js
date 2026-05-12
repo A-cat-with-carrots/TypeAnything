@@ -49,12 +49,17 @@ async function initLangPage() {
   const input = document.getElementById("langInput");
   const saveBtn = document.getElementById("langSave");
 
-  // Pre-fill from current lang.txt if present. Empty file leaves the
-  // input blank so the placeholder "English" shows in muted tone.
-  // Clicking puts the cursor at the leftmost position — no text to delete.
+  // Pre-fill only if user has a non-default custom value. The install
+  // script seeds "en" (legacy 2-letter code that maps to English), and
+  // "English" is also the implicit default, so both should leave the
+  // field blank so the placeholder "English" shows in muted tone.
+  // Clicking puts the cursor at the leftmost position — nothing to delete.
+  const DEFAULT_ALIASES = new Set(["en", "english", "english "]);
   try {
     const cur = await window.nativeReadLang();
-    if (cur && cur.trim()) input.value = cur.trim();
+    if (cur && cur.trim() && !DEFAULT_ALIASES.has(cur.trim().toLowerCase())) {
+      input.value = cur.trim();
+    }
   } catch (e) {}
 
   // Click chip → fill input
@@ -160,8 +165,6 @@ window.addEventListener("DOMContentLoaded", () => {
   if (page === "model") initModelPage();
   else                  initLangPage();
 
-  document.getElementById("btnClose").addEventListener("click",
-    () => window.nativeClose());
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") window.nativeClose();
   });
