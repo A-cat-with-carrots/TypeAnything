@@ -212,23 +212,6 @@ h1 .accent { color: var(--accent); }
   box-shadow: 0 0 0 3px rgba(212, 178, 122, 0.18);
 }
 
-.default-hint {
-  display: block;
-  margin: 0 0 22px;
-  font-family: var(--font-sans);
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-.default-hint code {
-  font-family: var(--font-mono);
-  color: var(--accent);
-  padding: 1px 6px;
-  background: rgba(212, 178, 122, 0.10);
-  border-radius: 6px;
-  font-size: 11px;
-}
-
 /* ─── Category groups ───────────────────────────────────────────── */
 .category { margin-bottom: 20px; }
 .category h3 {

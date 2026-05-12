@@ -49,15 +49,13 @@ async function initLangPage() {
   const input = document.getElementById("langInput");
   const saveBtn = document.getElementById("langSave");
 
-  // Pre-fill from current lang.txt; fall back to "English".
+  // Pre-fill from current lang.txt if present. Empty file leaves the
+  // input blank so the placeholder "English" shows in muted tone.
+  // Clicking puts the cursor at the leftmost position — no text to delete.
   try {
     const cur = await window.nativeReadLang();
     if (cur && cur.trim()) input.value = cur.trim();
-    else                    input.value = "English";
-  } catch (e) {
-    input.value = "English";
-  }
-  input.select();
+  } catch (e) {}
 
   // Click chip → fill input
   document.querySelectorAll(".chip").forEach(c => {
@@ -71,10 +69,11 @@ async function initLangPage() {
     });
   });
 
-  // Save: write lang.txt + close
+  // Save: write lang.txt + close. Empty input falls back to the placeholder
+  // default ("English"), so user can just press Save without typing anything.
   async function save() {
-    const v = input.value.trim();
-    if (!v) { toast("目标不能为空", "error"); return; }
+    let v = input.value.trim();
+    if (!v) v = input.placeholder || "English";
     saveBtn.disabled = true;
     try {
       await window.nativeWriteLang(v);
