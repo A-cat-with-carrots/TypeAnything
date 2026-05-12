@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TypeAnything</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body data-theme="auto">
+
+<!-- title bar (drag region) -->
+<header class="titlebar">
+  <div class="title">
+    <span class="logo">𓆟</span>
+    <span class="brand">TypeAnything</span>
+    <span class="sep">·</span>
+    <span id="pageTitle" class="page-title">切换语言</span>
+  </div>
+  <button class="x" id="btnClose" title="关闭 (Esc)">×</button>
+</header>
+
+<main>
+
+  <!-- ───────────────────────── PAGE: LANGUAGE ───────────────────────── -->
+  <section class="page" id="page-lang">
+    <h1>你说什么口吻 <span class="accent">AI</span> 就给你什么口吻</h1>
+    <p class="sub">输入任意自然语言描述。下次按 Enter 翻译时即按此风格落地。</p>
+
+    <div class="input-wrap">
+      <input id="langInput" type="text" placeholder="例如：金融式说话 / 像鲁迅一样的英语 / Klingon" autofocus />
+      <button id="langSave" class="btn primary">保存</button>
+    </div>
+
+    <div class="category">
+      <h3>🌐 语种</h3>
+      <div class="chips" data-group="lang">
+        <button class="chip">English</button>
+        <button class="chip">日本語</button>
+        <button class="chip">한국어</button>
+        <button class="chip">Français</button>
+        <button class="chip">Deutsch</button>
+        <button class="chip">Español</button>
+        <button class="chip">粵語</button>
+        <button class="chip">Türkçe</button>
+        <button class="chip">Bahasa Indonesia</button>
+        <button class="chip">हिन्दी</button>
+      </div>
+    </div>
+
+    <div class="category">
+      <h3>🎭 圈层风格</h3>
+      <div class="chips" data-group="clique">
+        <button class="chip">金融式说话</button>
+        <button class="chip">留学生式说话</button>
+        <button class="chip">互联网黑话</button>
+        <button class="chip">程序员式说话</button>
+        <button class="chip">学术大佬式</button>
+        <button class="chip">HR 式说话</button>
+        <button class="chip">销售式说话</button>
+        <button class="chip">二次元</button>
+        <button class="chip">东北话</button>
+        <button class="chip">港式中文</button>
+        <button class="chip">台湾腔</button>
+        <button class="chip">老北京话</button>
+      </div>
+    </div>
+
+    <div class="category">
+      <h3>🎬 场景 / 文体</h3>
+      <div class="chips" data-group="medium">
+        <button class="chip">学术英语</button>
+        <button class="chip">商务日语</button>
+        <button class="chip">古汉语风格</button>
+        <button class="chip">网络流行语</button>
+        <button class="chip">知乎体</button>
+        <button class="chip">小红书种草体</button>
+        <button class="chip">公众号文章体</button>
+        <button class="chip">B 站弹幕体</button>
+        <button class="chip">抖音口播体</button>
+        <button class="chip">营销号体</button>
+      </div>
+    </div>
+
+    <div class="category">
+      <h3>🪐 虚构 / 自定义</h3>
+      <div class="chips" data-group="fictional">
+        <button class="chip">像鲁迅一样的英语</button>
+        <button class="chip">像周杰伦歌词</button>
+        <button class="chip">港片黑帮台词</button>
+        <button class="chip">武侠小说体</button>
+        <button class="chip">玄幻爽文体</button>
+        <button class="chip">Klingon battle prose</button>
+        <button class="chip">Spanish chilango</button>
+        <button class="chip">Cockney slang</button>
+        <button class="chip">火星文</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── PAGE: MODEL ─────────────────────────── -->
+  <section class="page" id="page-model" hidden>
+    <h1>接入你自己的 <span class="accent">模型</span></h1>
+    <p class="sub">你的输入只发到下面这个 endpoint。无中转，无后端代理。</p>
+
+    <div class="preset-row">
+      <label class="preset-label">快速预设：</label>
+      <button class="preset" data-preset="deepseek">DeepSeek</button>
+      <button class="preset" data-preset="openai">OpenAI</button>
+      <button class="preset" data-preset="moonshot">Moonshot</button>
+      <button class="preset" data-preset="zhipu">智谱</button>
+      <button class="preset" data-preset="ollama">Ollama (本地)</button>
+    </div>
+
+    <form id="modelForm" class="form">
+      <label>
+        <span>API Key</span>
+        <div class="masked">
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+          <button type="button" class="toggle" id="toggleKey" title="显示 / 隐藏">👁</button>
+        </div>
+      </label>
+      <label>
+        <span>Model</span>
+        <input id="model" type="text" placeholder="deepseek-chat" />
+      </label>
+      <label>
+        <span>Host</span>
+        <input id="host" type="text" placeholder="api.deepseek.com" />
+      </label>
+      <label>
+        <span>Path</span>
+        <input id="path" type="text" placeholder="/v1/chat/completions" />
+      </label>
+    </form>
+
+    <div class="hint">
+      <a href="javascript:void(0)" id="getKeyLink">↗ 前往 DeepSeek 注册 + 充值 + 拿 API key</a>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="btnCancelModel">取消</button>
+      <button class="btn primary" id="btnSaveModel">保存并应用</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- toast -->
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

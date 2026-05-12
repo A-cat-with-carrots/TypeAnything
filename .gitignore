@@ -85,3 +85,7 @@ build/
 
 # Release staging — built locally, uploaded to GitHub Releases
 release-staging/
+
+# ta-settings build cache (xmake)
+tools/ta-settings/.xmake/
+tools/ta-settings/build/

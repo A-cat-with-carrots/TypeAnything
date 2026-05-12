@@ -144,23 +144,24 @@ void WeaselServerApp::SetupMenuHandlers() {
   m_server.AddMenuHandler(ID_WEASELTRAY_QUIT,
                           [this] { return m_server.Stop() == 0; });
 
-  // Switch Language — pop a submenu with all languages
-  m_server.AddMenuHandler(ID_WEASELTRAY_SWITCH_LANG, [this] {
-    show_lang_picker(m_server.GetHWnd());
-    return true;
+  // Switch Language — open ta-settings.exe WebView2 UI
+  m_server.AddMenuHandler(ID_WEASELTRAY_SWITCH_LANG, [dir] {
+    std::wstring exe = (dir / L"ta-settings.exe").wstring();
+    return (uintptr_t)ShellExecuteW(NULL, L"open", exe.c_str(),
+                                    L"--page lang",
+                                    dir.wstring().c_str(),
+                                    SW_SHOWNORMAL) > 32;
   });
 
   // Check for updates
   m_server.AddMenuHandler(ID_WEASELTRAY_CHECKUPDATE, check_update);
 
-  // Model config — spawn the WinForms-based PS popup that lets the user
-  // edit api_key / model / host / path in the schema yaml on the fly.
+  // Model config — open ta-settings.exe WebView2 UI on the model page
   m_server.AddMenuHandler(ID_WEASELTRAY_MODEL_CONFIG, [dir] {
-    std::wstring ps_path = (dir / L"model-config.ps1").wstring();
-    std::wstring args = L"-NoProfile -STA -ExecutionPolicy Bypass -File \"" +
-                        ps_path + L"\"";
-    return (uintptr_t)ShellExecuteW(NULL, L"open", L"powershell.exe",
-                                    args.c_str(), NULL,
+    std::wstring exe = (dir / L"ta-settings.exe").wstring();
+    return (uintptr_t)ShellExecuteW(NULL, L"open", exe.c_str(),
+                                    L"--page model",
+                                    dir.wstring().c_str(),
                                     SW_SHOWNORMAL) > 32;
   });
 

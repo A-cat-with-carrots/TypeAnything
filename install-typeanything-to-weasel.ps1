@@ -170,19 +170,40 @@ if (Test-Path $weaselData) {
     }
 }
 
-Write-Host "==> Ship model-config.ps1 next to the binaries"
-$mcCandidates = @(
-    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "model-config.ps1"),
-    (Join-Path $BuildRoot "..\..\model-config.ps1"),
-    "D:\hrdai\aiForType\model-config.ps1"
+Write-Host "==> Ship ta-settings.exe + WebView2Loader.dll + ui/"
+$installerDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$taExeCandidates = @(
+    (Join-Path $installerDir "ta-settings.exe"),
+    (Join-Path $installerDir "binaries\ta-settings.exe"),
+    "D:\hrdai\aiForType\tools\ta-settings\build\windows\x64\release\ta-settings.exe"
 )
-$mcSrcReal = $null
-foreach ($c in $mcCandidates) { if (Test-Path $c) { $mcSrcReal = $c; break } }
-if ($mcSrcReal) {
-    Copy-LockedOrPending $mcSrcReal (Join-Path $WeaselDir "model-config.ps1") "model-config.ps1" | Out-Null
+$taExeSrc = $null
+foreach ($c in $taExeCandidates) { if (Test-Path $c) { $taExeSrc = $c; break } }
+if (-not $taExeSrc) {
+    Write-Warning "    ta-settings.exe not found; tray '切换语言' / '模型配置' menu items will fail"
 } else {
-    Write-Warning "    model-config.ps1 not found in install bundle or repo root; tray menu's '模型配置' will be a no-op"
+    $taSrcDir = Split-Path $taExeSrc -Parent
+    Copy-LockedOrPending $taExeSrc (Join-Path $WeaselDir "ta-settings.exe") "ta-settings.exe" | Out-Null
+
+    $loader = Join-Path $taSrcDir "WebView2Loader.dll"
+    if (Test-Path $loader) {
+        Copy-LockedOrPending $loader (Join-Path $WeaselDir "WebView2Loader.dll") "WebView2Loader.dll" | Out-Null
+    }
+    $uiSrc = Join-Path $taSrcDir "ui"
+    $uiDst = Join-Path $WeaselDir "ui"
+    if (Test-Path $uiSrc) {
+        New-Item -ItemType Directory -Force -Path $uiDst | Out-Null
+        foreach ($f in @("index.html", "style.css", "app.js")) {
+            $s = Join-Path $uiSrc $f
+            if (Test-Path $s) { Copy-Item $s (Join-Path $uiDst $f) -Force }
+        }
+        Write-Host "    ui/ folder synced"
+    }
 }
+
+# Clean up legacy model-config.ps1 from earlier versions (no longer used).
+$oldMc = Join-Path $WeaselDir "model-config.ps1"
+if (Test-Path $oldMc) { Remove-Item -Force $oldMc -ErrorAction SilentlyContinue }
 
 Write-Host "==> Install typeanything schema with API key"
 if (-not (Test-Path $RimeUserDir)) { New-Item -ItemType Directory -Path $RimeUserDir | Out-Null }

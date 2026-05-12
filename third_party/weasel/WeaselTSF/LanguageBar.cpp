@@ -343,49 +343,22 @@ void write_lang_code(const char* code) {
   CloseHandle(h);
 }
 
-void show_lang_picker_in_client(HWND /*owner*/) {
-  // TypeAnything: free-form natural-language target picker.
-  // Spawn a tiny PowerShell that pops Microsoft.VisualBasic.InputBox.
-  // User can type anything — common language names ("English", "日本語"),
-  // dialect / style descriptions ("学术英语", "中二风格的日语",
-  // "Klingon battle prose"), or even invented styles. AI interprets.
-  std::wstring lang_file = lang_file_path();
-
-  std::wstring ps;
-  ps += L"-NoProfile -WindowStyle Hidden -Command \"";
-  ps += L"Add-Type -AssemblyName Microsoft.VisualBasic;";
-  ps += L"$f='";
-  // Escape single quotes in path
-  for (wchar_t c : lang_file) {
-    if (c == L'\'') ps += L"''";
-    else ps += c;
+void spawn_ta_settings(const wchar_t* page) {
+  // TypeAnything: open the modern WebView2-based settings UI for either
+  //   --page lang   (language picker)
+  //   --page model  (model config)
+  // ta-settings.exe ships next to the other Weasel binaries; locate it via
+  // the WeaselRoot registry value.
+  std::wstring root;
+  RegGetStringValue(HKEY_LOCAL_MACHINE, GetWeaselRegName(),
+                    L"WeaselRoot", root);
+  if (root.empty()) {
+    root = L"C:\Program Files\Rime\weasel-0.17.4";
   }
-  ps += L"';";
-  ps += L"$cur=if(Test-Path $f){";
-  ps += L"((Get-Content -LiteralPath $f -Encoding UTF8 -Raw)";
-  ps += L" -split '`r?`n' | Where-Object {$_ -and $_ -notmatch '^\s*#'} | Select-Object -First 1)";
-  ps += L"}else{'English'};";
-  ps += L"if($null -eq $cur){$cur='English'};";
-  ps += L"$msg=\"输入翻译目标，可写任意 AI 能理解的描述。`n`n";
-  ps += L"【语种】直接翻译为该语言`n";
-  ps += L"   English / 日本語 / 한국어 / Français / Deutsch / Español / 粵語 / Türkçe`n`n";
-  ps += L"【圈层风格】加入特定群体的说话方式`n";
-  ps += L"   金融式说话 / 留学生式说话 / 互联网黑话 / 程序员式说话`n";
-  ps += L"   学术大佬式 / HR 式 / 销售式 / 二次元`n";
-  ps += L"   东北话 / 港式中文 / 台湾腔 / 老北京话`n`n";
-  ps += L"【场景/文体】指定语气、年代、媒介`n";
-  ps += L"   学术英语 / 商务日语 / 古汉语风格 / 网络流行语`n";
-  ps += L"   知乎体 / 小红书种草体 / 公众号文章体 / B站弹幕体`n`n";
-  ps += L"【虚构/自定义】AI 自由发挥`n";
-  ps += L"   像鲁迅一样的英语 / 像周杰伦歌词 / 港片黑帮台词`n";
-  ps += L"   Klingon battle prose / 火星文 / Spanish chilango\";";
-  ps += L"$r=[Microsoft.VisualBasic.Interaction]::InputBox($msg,'TypeAnything 切换语言',$cur);";
-  ps += L"if($r){[System.IO.File]::WriteAllText($f,$r,";
-  ps += L"(New-Object System.Text.UTF8Encoding $false))}\"";
-
-  // Spawn detached so we don't block the IME thread.
-  ShellExecuteW(NULL, L"open", L"powershell.exe", ps.c_str(),
-                NULL, SW_SHOWNORMAL);
+  std::wstring exe  = root + L"\ta-settings.exe";
+  std::wstring args = std::wstring(L"--page ") + page;
+  ShellExecuteW(NULL, L"open", exe.c_str(), args.c_str(),
+                root.c_str(), SW_SHOWNORMAL);
 }
 
 }  // namespace
@@ -394,22 +367,11 @@ void WeaselTSF::_HandleLangBarMenuSelect(UINT wID) {
   std::wstring dir{};
   switch (wID) {
     case ID_WEASELTRAY_SWITCH_LANG: {
-      HWND focus = _GetFocusedContextWindow();
-      show_lang_picker_in_client(focus ? focus : GetForegroundWindow());
+      spawn_ta_settings(L"lang");
       return;
     }
     case ID_WEASELTRAY_MODEL_CONFIG: {
-      std::wstring root;
-      RegGetStringValue(HKEY_LOCAL_MACHINE, GetWeaselRegName(),
-                        L"WeaselRoot", root);
-      if (root.empty()) {
-        root = L"C:\Program Files\Rime\weasel-0.17.4";
-      }
-      std::wstring args =
-          L"-NoProfile -STA -ExecutionPolicy Bypass -File \"" + root +
-          L"\model-config.ps1\"";
-      ShellExecuteW(NULL, L"open", L"powershell.exe", args.c_str(),
-                    NULL, SW_SHOWNORMAL);
+      spawn_ta_settings(L"model");
       return;
     }
     case ID_WEASELTRAY_RERUN_SERVICE:
