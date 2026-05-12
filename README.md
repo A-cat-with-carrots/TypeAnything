@@ -351,12 +351,11 @@ cd ..
 ## 已知限制
 
 - **macOS / Linux 暂不支持** — 需用 squirrel (macOS) / fcitx-rime (Linux) 重新 fork
-- **新 weaselx64.dll 真生效需注销重登** — 旧 dll 被每个文本输入进程持锁
-- **WebView2 runtime** — 设置面板依赖 Edge WebView2（Win10 20H1+ / Win11 默认装；Win10 老版本需手动装一次）
-- **Switch Language 改后已打的字不回译** — 只影响下次 Enter 触发
-- **网络断 / API 报错时保留中文 + LOG(ERROR)** — 不静默吞错
-- **首次 schema build ~3-5s** — librime 编译 luna_pinyin.table.bin (13MB)
-- **微信 ghost cursor 修了，但仅限 PC 端** — 微信小程序内部 webview 仍走 Chrome IME 路径
+- **首次安装 weaselx64.dll 真生效需注销重登或重启** — 旧 dll 被每个文本输入进程持锁；install 脚本走 `MoveFileEx` pending-on-reboot 自动兜底，重启后即生效
+- **WebView2 runtime 依赖** — 设置面板用 Edge WebView2。Win10 20H1+ / Win11 默认装；老 Win10 (1909/1903) 需手动装一次
+- **切换风格只影响下次 Enter** — processor 在 Enter 触发时才重读 `typeanything_lang.txt`，已落地的文本不回译
+- **首次启动 schema 编译 ~3-5s** — librime 首次编译 `luna_pinyin.table.bin` (13MB)，仅一次性
+- **微信 / 飞书等富文本编辑器兼容性未全量验证** — TSF 框架级集成相比 sidecar/hook 方案更稳，但具体应用的 IME 体验依赖该应用对 TSF 的实现；如遇问题请提 issue。微信内嵌小程序的 webview 走 Chromium 自家 IME 路径，不经我们 TSF
 
 ---
 
