@@ -1,14 +1,18 @@
 -- ta-installer: single-exe bundled installer for TypeAnything.
 -- Embeds Weasel binaries + ta-settings + ui + schema yaml as RT_RCDATA.
+--
+-- The resource embedding is done OUTSIDE xmake by _stage_embed.ps1, which
+-- runs rc.exe + cvtres.exe to produce embed/installer.res.obj (real COFF).
+-- We just add that .obj to the link inputs here.
 
 target("ta-installer")
   set_kind("binary")
-  -- /SUBSYSTEM:WINDOWS; wWinMain entry
   add_ldflags("/SUBSYSTEM:WINDOWS", "/ENTRY:wWinMainCRTStartup", {force = true})
 
-  add_files("main.cpp", "installer.rc")
+  add_files("main.cpp")
+  -- Prebuilt RES → COFF object that holds manifest + icon + RT_RCDATA blobs.
+  add_files("embed/installer.res.obj")
 
-  -- Reuse ta-settings WebView2 SDK (vendored, x64).
   add_includedirs("../ta-settings/vendor/webview2/include")
   add_linkdirs("../ta-settings/vendor/webview2/x64")
   add_links("WebView2LoaderStatic")

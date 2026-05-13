@@ -34,6 +34,7 @@
 #include <thread>
 #include <vector>
 
+#include "resource.h"
 #include "../ta-settings/vendor/webview.h"
 
 namespace fs = std::filesystem;
@@ -134,7 +135,7 @@ static std::vector<std::string> ParseJsonStringArray(const std::string& json) {
 
 // ─── resource extraction ────────────────────────────────────────
 
-static std::pair<const void*, DWORD> LoadEmbedded(const wchar_t* name) {
+static std::pair<const void*, DWORD> LoadEmbedded(LPCWSTR name) {
   HRSRC h = FindResourceW(nullptr, name, RT_RCDATA);
   if (!h) return {nullptr, 0};
   DWORD sz = SizeofResource(nullptr, h);
@@ -143,7 +144,7 @@ static std::pair<const void*, DWORD> LoadEmbedded(const wchar_t* name) {
   return {LockResource(g), sz};
 }
 
-static bool WriteEmbeddedToFile(const wchar_t* res_name, const fs::path& dst) {
+static bool WriteEmbeddedToFile(LPCWSTR res_name, const fs::path& dst) {
   auto [ptr, sz] = LoadEmbedded(res_name);
   if (!ptr) return false;
   std::error_code ec;
@@ -155,7 +156,7 @@ static bool WriteEmbeddedToFile(const wchar_t* res_name, const fs::path& dst) {
 }
 
 // Same, but with MoveFileEx pending-on-reboot fallback when dst is locked.
-static bool WriteEmbeddedToLockableFile(const wchar_t* res_name,
+static bool WriteEmbeddedToLockableFile(LPCWSTR res_name,
                                         const fs::path& dst,
                                         bool* reboot_needed) {
   auto [ptr, sz] = LoadEmbedded(res_name);
@@ -213,10 +214,91 @@ static fs::path RimeUserDir() {
   return fs::path(root) / L"Rime";
 }
 
-static fs::path TempUiDir() {
-  WCHAR tmp[MAX_PATH] = {0};
-  GetTempPathW(MAX_PATH, tmp);
-  return fs::path(tmp) / L"ta-installer-ui";
+// Base64 encode raw bytes. Used to inline fish.png into the HTML so we
+// don't need to extract files for the installer's own webview UI.
+static std::string Base64(const unsigned char* data, size_t len) {
+  static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve(((len + 2) / 3) * 4);
+  size_t i = 0;
+  while (i + 2 < len) {
+    unsigned v = (data[i] << 16) | (data[i+1] << 8) | data[i+2];
+    out.push_back(tbl[(v >> 18) & 63]);
+    out.push_back(tbl[(v >> 12) & 63]);
+    out.push_back(tbl[(v >>  6) & 63]);
+    out.push_back(tbl[ v        & 63]);
+    i += 3;
+  }
+  if (i + 1 == len) {
+    unsigned v = data[i] << 16;
+    out.push_back(tbl[(v >> 18) & 63]);
+    out.push_back(tbl[(v >> 12) & 63]);
+    out += "==";
+  } else if (i + 2 == len) {
+    unsigned v = (data[i] << 16) | (data[i+1] << 8);
+    out.push_back(tbl[(v >> 18) & 63]);
+    out.push_back(tbl[(v >> 12) & 63]);
+    out.push_back(tbl[(v >>  6) & 63]);
+    out += "=";
+  }
+  return out;
+}
+
+// Read an embedded resource into a std::string (for HTML/CSS/JS).
+static std::string LoadEmbeddedAsString(LPCWSTR name) {
+  auto [ptr, sz] = LoadEmbedded(name);
+  if (!ptr || sz == 0) return "";
+  return std::string((const char*)ptr, (size_t)sz);
+}
+
+// Build the all-in-one installer HTML by inlining CSS, JS, and the
+// logo as base64. We then feed it to webview.set_html(), which avoids
+// the file:// path resolution problems that the elevated UAC token
+// occasionally introduces.
+static std::string BuildInlineHtml() {
+  std::string html = LoadEmbeddedAsString(MAKEINTRESOURCEW(IDR_INSTALL_HTML));
+  std::string css  = LoadEmbeddedAsString(MAKEINTRESOURCEW(IDR_INSTALL_CSS));
+  std::string js   = LoadEmbeddedAsString(MAKEINTRESOURCEW(IDR_INSTALL_JS));
+  auto [png_ptr, png_sz] = LoadEmbedded(MAKEINTRESOURCEW(IDR_INSTALL_PNG));
+
+  // Replace <link rel="stylesheet" href="style.css" />
+  {
+    std::string needle = R"(<link rel="stylesheet" href="style.css" />)";
+    size_t pos = html.find(needle);
+    if (pos != std::string::npos) {
+      html.replace(pos, needle.size(), "<style>\n" + css + "\n</style>");
+    }
+  }
+  // Replace <script src="app.js"></script>
+  {
+    std::string needle = R"(<script src="app.js"></script>)";
+    size_t pos = html.find(needle);
+    if (pos != std::string::npos) {
+      html.replace(pos, needle.size(), "<script>\n" + js + "\n</script>");
+    }
+  }
+  // Replace fish.png references with data: URL.
+  if (png_ptr && png_sz > 0) {
+    std::string b64 = Base64((const unsigned char*)png_ptr, (size_t)png_sz);
+    std::string data_url = "data:image/png;base64," + b64;
+    for (const std::string& ref : {
+            std::string("href=\"fish.png\""),
+            std::string("src=\"fish.png\""),
+            std::string("url(\"fish.png\")"),
+            std::string("url(fish.png)") }) {
+      size_t pos = 0;
+      while ((pos = html.find(ref, pos)) != std::string::npos) {
+        std::string repl;
+        if (ref.find("href") != std::string::npos)       repl = "href=\"" + data_url + "\"";
+        else if (ref.find("src")  != std::string::npos)  repl = "src=\""  + data_url + "\"";
+        else if (ref.find("url(\"") != std::string::npos) repl = "url(\"" + data_url + "\")";
+        else                                              repl = "url("   + data_url + ")";
+        html.replace(pos, ref.size(), repl);
+        pos += repl.size();
+      }
+    }
+  }
+  return html;
 }
 
 // ─── process control ────────────────────────────────────────────
@@ -342,14 +424,14 @@ static void DoInstall(InstallOptions opts) {
     std::error_code ec; fs::create_directories(wdir, ec);
   }
 
-  struct Pair { const wchar_t* res; const wchar_t* leaf; int weight; };
+  struct Pair { LPCWSTR res; const wchar_t* leaf; int weight; };
   std::vector<Pair> binaries = {
-    {L"RIME_DLL",       L"rime.dll",          12},
-    {L"WEASELX64_DLL",  L"weaselx64.dll",     12},
-    {L"WEASELSERVER",   L"WeaselServer.exe",  10},
-    {L"WEASELDEPLOYER", L"WeaselDeployer.exe", 8},
-    {L"TA_SETTINGS",    L"ta-settings.exe",    8},
-    {L"WV2_LOADER",     L"WebView2Loader.dll", 6},
+    {MAKEINTRESOURCEW(IDR_RIME_DLL),       L"rime.dll",          12},
+    {MAKEINTRESOURCEW(IDR_WEASELX64_DLL),  L"weaselx64.dll",     12},
+    {MAKEINTRESOURCEW(IDR_WEASELSERVER),   L"WeaselServer.exe",  10},
+    {MAKEINTRESOURCEW(IDR_WEASELDEPLOYER), L"WeaselDeployer.exe", 8},
+    {MAKEINTRESOURCEW(IDR_TA_SETTINGS),    L"ta-settings.exe",    8},
+    {MAKEINTRESOURCEW(IDR_WV2_LOADER),     L"WebView2Loader.dll", 6},
   };
 
   int percent = 10;
@@ -376,20 +458,20 @@ static void DoInstall(InstallOptions opts) {
     std::error_code ec; fs::copy_file(sys32_dll, sys32_bak, ec);
   }
   PushStatus(64, "替换 system32\\weasel.dll …", "system32\\weasel.dll");
-  WriteEmbeddedToLockableFile(L"WEASELX64_DLL", sys32_dll, &reboot_needed);
+  WriteEmbeddedToLockableFile(MAKEINTRESOURCEW(IDR_WEASELX64_DLL), sys32_dll, &reboot_needed);
 
   // 4. ta-settings ui directory.
   fs::path ui = wdir / L"ui";
   PushStatus(70, "释放 UI 资源 …", "ta-settings ui/");
-  WriteEmbeddedToFile(L"TARGET_UI_HTML", ui / L"index.html");
-  WriteEmbeddedToFile(L"TARGET_UI_CSS",  ui / L"style.css");
-  WriteEmbeddedToFile(L"TARGET_UI_JS",   ui / L"app.js");
-  WriteEmbeddedToFile(L"TARGET_UI_PNG",  ui / L"fish.png");
+  WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_HTML), ui / L"index.html");
+  WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_CSS),  ui / L"style.css");
+  WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_JS),   ui / L"app.js");
+  WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_PNG),  ui / L"fish.png");
 
   // 5. Schema yaml with injected api_key and target_lang.
   PushStatus(78, "写入用户配置 …", "%APPDATA%\\Rime\\typeanything.schema.yaml");
   {
-    auto [ptr, sz] = LoadEmbedded(L"SCHEMA_YAML");
+    auto [ptr, sz] = LoadEmbedded(MAKEINTRESOURCEW(IDR_SCHEMA_YAML));
     std::string yaml((const char*)ptr, sz);
     auto replace_first = [&](const std::string& needle, const std::string& with) {
       size_t pos = yaml.find(needle);
@@ -517,13 +599,25 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     SetEnvironmentVariableW(L"WEBVIEW2_USER_DATA_FOLDER", ud.c_str());
   }
 
-  // Extract installer ui to TEMP so webview can navigate to it.
-  fs::path ui_dir = TempUiDir();
-  std::error_code ec; fs::create_directories(ui_dir, ec);
-  WriteEmbeddedToFile(L"INSTALL_HTML", ui_dir / L"index.html");
-  WriteEmbeddedToFile(L"INSTALL_CSS",  ui_dir / L"style.css");
-  WriteEmbeddedToFile(L"INSTALL_JS",   ui_dir / L"app.js");
-  WriteEmbeddedToFile(L"INSTALL_PNG",  ui_dir / L"fish.png");
+  // Materialize inline UI to %LOCALAPPDATA%\TypeAnything\installer-ui\index.html
+  // and navigate the webview to it via file://. Avoids the data: URL nesting
+  // and length limits we hit when calling set_html() with embedded base64.
+  std::wstring local_appdata;
+  {
+    wchar_t buf[MAX_PATH] = {0};
+    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, buf))) {
+      local_appdata = buf;
+    }
+  }
+  fs::path ui_dir = fs::path(local_appdata) / L"TypeAnything" / L"installer-ui";
+  std::error_code ui_ec;
+  fs::create_directories(ui_dir, ui_ec);
+  fs::path ui_html = ui_dir / L"index.html";
+  {
+    std::string inline_html = BuildInlineHtml();
+    std::ofstream f(ui_html, std::ios::binary | std::ios::trunc);
+    f.write(inline_html.data(), (std::streamsize)inline_html.size());
+  }
 
   webview::webview w(false, nullptr);
   w.set_title("TypeAnything 安装");
@@ -577,7 +671,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     }
   });
 
-  w.navigate(FileUrl(ui_dir / L"index.html"));
+  w.navigate(FileUrl(ui_html));
   w.run();
 
   stop_pump.store(true);

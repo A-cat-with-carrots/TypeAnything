@@ -1,34 +1,35 @@
 // TypeAnything Installer — embedded resources.
 //
-// All bundled artifacts ship inside the exe as RT_RCDATA. FindResourceW with
-// the string name at runtime, LockResource → write to disk. _stage_embed.ps1
-// stages everything into embed/ before xmake build.
+// Integer IDs (see resource.h) — works around string-name FindResource issues.
+// Paths absolute because rc.exe is invoked from the .xmake build directory.
+
+#include "resource.h"
 
 // UAC + DPI + UTF-8 manifest
-1 24 "manifest.xml"
+1 24 "D:\\hrdai\\aiForType\\tools\\ta-installer\\manifest.xml"
 
 // Window / taskbar icon
-1 ICON "..\\ta-settings\\fish.ico"
+1 ICON "D:\\hrdai\\aiForType\\tools\\ta-settings\\fish.ico"
 
-// ───── Bundled binaries ──────────────────────────────────────────
-"RIME_DLL"        RCDATA "embed\\rime.dll"
-"WEASELX64_DLL"   RCDATA "embed\\weaselx64.dll"
-"WEASELSERVER"    RCDATA "embed\\WeaselServer.exe"
-"WEASELDEPLOYER"  RCDATA "embed\\WeaselDeployer.exe"
-"TA_SETTINGS"     RCDATA "embed\\ta-settings.exe"
-"WV2_LOADER"      RCDATA "embed\\WebView2Loader.dll"
+// ───── Bundled binaries ─────────────────────────────────────────
+IDR_RIME_DLL        RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\rime.dll"
+IDR_WEASELX64_DLL   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\weaselx64.dll"
+IDR_WEASELSERVER    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\WeaselServer.exe"
+IDR_WEASELDEPLOYER  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\WeaselDeployer.exe"
+IDR_TA_SETTINGS     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\ta-settings.exe"
+IDR_WV2_LOADER      RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\WebView2Loader.dll"
 
-// ───── ta-settings UI (gets copied to <install_dir>\ui\) ─────────
-"TARGET_UI_HTML"  RCDATA "embed\\target-ui\\index.html"
-"TARGET_UI_CSS"   RCDATA "embed\\target-ui\\style.css"
-"TARGET_UI_JS"    RCDATA "embed\\target-ui\\app.js"
-"TARGET_UI_PNG"   RCDATA "embed\\target-ui\\fish.png"
+// ───── ta-settings UI (gets copied to <install_dir>\ui\) ────────
+IDR_TARGET_UI_HTML  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\index.html"
+IDR_TARGET_UI_CSS   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\style.css"
+IDR_TARGET_UI_JS    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\app.js"
+IDR_TARGET_UI_PNG   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\fish.png"
 
-// ───── Schema yaml (gets written to %APPDATA%\Rime\) ─────────────
-"SCHEMA_YAML"     RCDATA "embed\\typeanything.schema.yaml"
+// ───── Schema yaml ──────────────────────────────────────────────
+IDR_SCHEMA_YAML     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\typeanything.schema.yaml"
 
-// ───── Installer's own UI (extracted to %TEMP%\ta-installer-ui\) ─
-"INSTALL_HTML"    RCDATA "embed\\install-ui\\index.html"
-"INSTALL_CSS"     RCDATA "embed\\install-ui\\style.css"
-"INSTALL_JS"      RCDATA "embed\\install-ui\\app.js"
-"INSTALL_PNG"     RCDATA "embed\\install-ui\\fish.png"
+// ───── Installer's own UI ───────────────────────────────────────
+IDR_INSTALL_HTML    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\index.html"
+IDR_INSTALL_CSS     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\style.css"
+IDR_INSTALL_JS      RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\app.js"
+IDR_INSTALL_PNG     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\fish.png"

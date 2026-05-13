@@ -34,5 +34,34 @@ foreach ($f in "index.html","style.css","app.js","fish.png") {
 Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.schema.yaml" `
           "$embed\typeanything.schema.yaml"
 
+# Compile installer.rc → .res → .obj (real COFF) so xmake link picks it up
+# as a normal object file. xmake's built-in RC handling outputs RES format
+# but under a .obj name, which link.exe silently drops.
+$rcExe = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory -ErrorAction SilentlyContinue |
+         Sort-Object Name -Descending | ForEach-Object {
+             $candidate = Join-Path $_.FullName "x64\rc.exe"
+             if (Test-Path $candidate) { return $candidate }
+         } | Select-Object -First 1
+$cvtres = Get-ChildItem "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC" -Directory -ErrorAction SilentlyContinue |
+          Sort-Object Name -Descending | ForEach-Object {
+              $candidate = Join-Path $_.FullName "bin\HostX64\x64\cvtres.exe"
+              if (Test-Path $candidate) { return $candidate }
+          } | Select-Object -First 1
+
+if (-not $rcExe)   { throw "rc.exe not found (need Windows SDK)" }
+if (-not $cvtres)  { throw "cvtres.exe not found (need VS2022 BuildTools)" }
+
+Write-Host "==> rc.exe : $rcExe"
+Write-Host "==> cvtres : $cvtres"
+
+$rc  = Join-Path $here "installer.rc"
+$res = Join-Path $here "embed\installer.res"
+$obj = Join-Path $here "embed\installer.res.obj"
+
+& $rcExe -nologo -fo $res $rc
+if ($LASTEXITCODE -ne 0) { throw "rc.exe failed: $LASTEXITCODE" }
+& $cvtres /MACHINE:X64 /NOLOGO /OUT:$obj $res
+if ($LASTEXITCODE -ne 0) { throw "cvtres failed: $LASTEXITCODE" }
+
 Write-Host "==> embed staged:"
 Get-ChildItem -Recurse $embed | ForEach-Object { Write-Host ("  {0,10}B  {1}" -f $_.Length, $_.FullName.Substring($embed.Length + 1)) }
