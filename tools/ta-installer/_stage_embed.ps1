@@ -1,0 +1,38 @@
+# Stage all artifacts for installer.rc to embed.
+# Run before xmake build.
+
+$ErrorActionPreference = "Stop"
+$here = "D:\hrdai\aiForType\tools\ta-installer"
+$embed = Join-Path $here "embed"
+
+if (Test-Path $embed) { Remove-Item -Recurse -Force $embed }
+New-Item -ItemType Directory -Force -Path $embed,"$embed\target-ui","$embed\install-ui" | Out-Null
+
+# 1. Weasel binaries
+$buildBin = "D:\hrdai\aiForType\third_party\weasel\build\windows\x64\release"
+Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\dist\lib\rime.dll" "$embed\rime.dll"
+Copy-Item "$buildBin\WeaselTSF\weaselx64.dll"           "$embed\weaselx64.dll"
+Copy-Item "$buildBin\WeaselServer\WeaselServer.exe"     "$embed\WeaselServer.exe"
+Copy-Item "$buildBin\WeaselDeployer\WeaselDeployer.exe" "$embed\WeaselDeployer.exe"
+
+# 2. ta-settings.exe + loader
+$taBin = "D:\hrdai\aiForType\tools\ta-settings\build\windows\x64\release"
+Copy-Item "$taBin\ta-settings.exe"     "$embed\ta-settings.exe"
+Copy-Item "$taBin\WebView2Loader.dll"  "$embed\WebView2Loader.dll"
+
+# 3. target ui (for ta-settings to load post-install)
+foreach ($f in "index.html","style.css","app.js","fish.png") {
+    Copy-Item "$taBin\ui\$f" "$embed\target-ui\$f"
+}
+
+# 4. installer ui (this exe's own webview pages)
+foreach ($f in "index.html","style.css","app.js","fish.png") {
+    Copy-Item "$here\ui\$f" "$embed\install-ui\$f"
+}
+
+# 5. schema yaml template
+Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.schema.yaml" `
+          "$embed\typeanything.schema.yaml"
+
+Write-Host "==> embed staged:"
+Get-ChildItem -Recurse $embed | ForEach-Object { Write-Host ("  {0,10}B  {1}" -f $_.Length, $_.FullName.Substring($embed.Length + 1)) }
