@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TypeAnything 安装</title>
+<link rel="icon" type="image/png" href="fish.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Titlebar (OS chrome handles min/close) -->
+<header class="titlebar">
+  <div class="title">
+    <span class="logo" aria-hidden="true"></span>
+    <span class="brand">神仙鱼<em>TypeAnything</em></span>
+    <span id="pageTitle" class="page-title">一键安装</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Step 1: API key + default target -->
+  <section class="page" id="page-key">
+    <p class="eyebrow">SETUP · 1 / 2</p>
+    <h1>接入你的 <span class="accent">AI</span>，3 步上手。</h1>
+    <p class="sub">
+      TypeAnything 是 Windows 系统级输入法。打中文 → Enter → AI 改写为任意目标。
+      你的输入只发到你填的 endpoint，无中转、无后端代理。
+    </p>
+
+    <form class="form" id="setupForm" onsubmit="return false;">
+      <label>
+        <span>API Key</span>
+        <div class="masked">
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" autofocus />
+          <button type="button" class="toggle" id="toggleKey" title="显示 / 隐藏">👁</button>
+        </div>
+      </label>
+      <label>
+        <span>默认目标</span>
+        <input id="targetLang" type="text" placeholder="English" />
+      </label>
+      <p class="hint">
+        <a href="javascript:void(0)" id="getKeyLink">↗ 还没有 API key？前往 DeepSeek 注册 + 充值</a>
+      </p>
+    </form>
+
+    <p class="legal">
+      默认连 DeepSeek（中文质量好 + 价格低）。安装后可在托盘菜单「模型配置」改 OpenAI / Moonshot / Ollama 等任意 OpenAI Chat Completions 兼容 API。
+    </p>
+
+    <div class="actions">
+      <button class="btn" id="btnCancel">取消</button>
+      <button class="btn primary" id="btnStart">开始安装</button>
+    </div>
+  </section>
+
+  <!-- Step 2: progress -->
+  <section class="page" id="page-progress" hidden>
+    <p class="eyebrow">SETUP · 2 / 2</p>
+    <h1>正在安装 …</h1>
+    <p class="sub" id="progressMsg">准备文件 …</p>
+
+    <div class="progressbar"><div class="bar" id="bar"></div></div>
+
+    <ul class="log" id="log"></ul>
+  </section>
+
+  <!-- Step 3: done -->
+  <section class="page" id="page-done" hidden>
+    <p class="eyebrow">DONE</p>
+    <h1>装好了。<span class="accent">直接用。</span></h1>
+    <p class="sub">
+      <strong>无需重启电脑</strong>。在任意 <strong>新打开</strong>的应用（记事本 / 浏览器 / 微信 / VSCode…）按 <code>Win+Space</code> 切到 <strong>TypeAnything</strong>，输入拼音 → 选词 → Enter → 即可看到 AI 风格改写。
+    </p>
+    <p class="legal">
+      已开着的应用持有旧 IME DLL，需重启该应用（或注销重登 / 重启电脑）才能加载新 DLL。
+    </p>
+
+    <div class="actions">
+      <button class="btn primary" id="btnClose">完成</button>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

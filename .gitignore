@@ -89,3 +89,8 @@ release-staging/
 # ta-settings build cache (xmake)
 tools/ta-settings/.xmake/
 tools/ta-settings/build/
+
+# ta-installer build cache + staged embed
+tools/ta-installer/.xmake/
+tools/ta-installer/build/
+tools/ta-installer/embed/

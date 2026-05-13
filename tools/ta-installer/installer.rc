@@ -1,0 +1,34 @@
+// TypeAnything Installer — embedded resources.
+//
+// All bundled artifacts ship inside the exe as RT_RCDATA. FindResourceW with
+// the string name at runtime, LockResource → write to disk. _stage_embed.ps1
+// stages everything into embed/ before xmake build.
+
+// UAC + DPI + UTF-8 manifest
+1 24 "manifest.xml"
+
+// Window / taskbar icon
+1 ICON "..\\ta-settings\\fish.ico"
+
+// ───── Bundled binaries ──────────────────────────────────────────
+"RIME_DLL"        RCDATA "embed\\rime.dll"
+"WEASELX64_DLL"   RCDATA "embed\\weaselx64.dll"
+"WEASELSERVER"    RCDATA "embed\\WeaselServer.exe"
+"WEASELDEPLOYER"  RCDATA "embed\\WeaselDeployer.exe"
+"TA_SETTINGS"     RCDATA "embed\\ta-settings.exe"
+"WV2_LOADER"      RCDATA "embed\\WebView2Loader.dll"
+
+// ───── ta-settings UI (gets copied to <install_dir>\ui\) ─────────
+"TARGET_UI_HTML"  RCDATA "embed\\target-ui\\index.html"
+"TARGET_UI_CSS"   RCDATA "embed\\target-ui\\style.css"
+"TARGET_UI_JS"    RCDATA "embed\\target-ui\\app.js"
+"TARGET_UI_PNG"   RCDATA "embed\\target-ui\\fish.png"
+
+// ───── Schema yaml (gets written to %APPDATA%\Rime\) ─────────────
+"SCHEMA_YAML"     RCDATA "embed\\typeanything.schema.yaml"
+
+// ───── Installer's own UI (extracted to %TEMP%\ta-installer-ui\) ─
+"INSTALL_HTML"    RCDATA "embed\\install-ui\\index.html"
+"INSTALL_CSS"     RCDATA "embed\\install-ui\\style.css"
+"INSTALL_JS"      RCDATA "embed\\install-ui\\app.js"
+"INSTALL_PNG"     RCDATA "embed\\install-ui\\fish.png"
