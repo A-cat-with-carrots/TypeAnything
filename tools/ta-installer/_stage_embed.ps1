@@ -30,9 +30,11 @@ foreach ($f in "index.html","style.css","app.js","fish.png") {
     Copy-Item "$here\ui\$f" "$embed\install-ui\$f"
 }
 
-# 5. schema yaml template
+# 5. schema yaml template + supplement dict (modern AI/IT/slang terms)
 Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.schema.yaml" `
           "$embed\typeanything.schema.yaml"
+Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.dict.yaml" `
+          "$embed\typeanything.dict.yaml"
 
 # Compile installer.rc → .res → .obj (real COFF) so xmake link picks it up
 # as a normal object file. xmake's built-in RC handling outputs RES format

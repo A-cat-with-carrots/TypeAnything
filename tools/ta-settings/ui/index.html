@@ -16,6 +16,11 @@
     <span class="brand">神仙鱼<em>TypeAnything</em></span>
     <span id="pageTitle" class="page-title">切换风格</span>
   </div>
+  <label class="pure-toggle" id="pureToggleWrap" title="开启后只输出原始中文，Enter 正常换行/提交">
+    <span class="pure-toggle-label">纯净模式</span>
+    <input type="checkbox" id="pureToggle" />
+    <span class="pure-toggle-slider" aria-hidden="true"></span>
+  </label>
 </header>
 
 <main>
@@ -112,29 +117,30 @@
       <button class="preset" data-preset="ollama">Ollama</button>
     </div>
 
-    <form id="modelForm" class="form" onsubmit="return false;">
-      <label>
+    <form id="modelForm" class="form-grid" onsubmit="return false;">
+      <label class="full">
         <span>API Key</span>
         <div class="masked">
           <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
           <button type="button" class="toggle" id="toggleKey" title="显示 / 隐藏" aria-label="toggle">👁</button>
         </div>
       </label>
-      <label>
+
+      <label class="full">
         <span>Model</span>
         <input id="model" type="text" placeholder="deepseek-chat" />
       </label>
-      <label>
+
+      <label class="half">
         <span>Host</span>
         <input id="host" type="text" placeholder="api.deepseek.com" />
       </label>
-      <label>
+      <label class="half">
         <span>Path</span>
         <input id="path" type="text" placeholder="/v1/chat/completions" />
       </label>
-      <p class="hint">
-        <a href="javascript:void(0)" id="getKeyLink">↗ 前往 DeepSeek 注册 + 充值 + 拿 API key</a>
-      </p>
+
+      <p class="endpoint-preview" id="endpointPreview"></p>
     </form>
 
     <div class="actions">

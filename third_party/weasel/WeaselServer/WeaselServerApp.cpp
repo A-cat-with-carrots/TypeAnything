@@ -7,6 +7,9 @@
 #include <vector>
 #include <Shlobj.h>
 #include <KnownFolders.h>
+#include <thread>
+#include <winhttp.h>
+#pragma comment(lib, "winhttp.lib")
 
 WeaselServerApp::WeaselServerApp()
     : m_handler(std::make_unique<RimeWithWeaselHandler>(&m_ui)),
@@ -16,6 +19,278 @@ WeaselServerApp::WeaselServerApp()
 }
 
 WeaselServerApp::~WeaselServerApp() {}
+
+// ─── TypeAnything in-app update check ────────────────────────────────
+//
+// Current installed version. Bump this with each release; the installer
+// will overwrite the EXE so the new constant ships automatically.
+#ifndef TA_VERSION
+#define TA_VERSION L"v0.6.2"
+#endif
+
+namespace {
+
+// Minimal WinHTTP GET helper. Returns response body as UTF-8 string,
+// or empty on any failure. Supports HTTPS only.
+std::string HttpsGet(const std::wstring& host,
+                     const std::wstring& path,
+                     const wchar_t* user_agent,
+                     DWORD timeout_ms = 12000) {
+  HINTERNET hs = WinHttpOpen(user_agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+  if (!hs) return "";
+  WinHttpSetTimeouts(hs, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
+  HINTERNET hc = WinHttpConnect(hs, host.c_str(),
+                                INTERNET_DEFAULT_HTTPS_PORT, 0);
+  if (!hc) { WinHttpCloseHandle(hs); return ""; }
+  HINTERNET hr = WinHttpOpenRequest(hc, L"GET", path.c_str(), nullptr,
+                                    WINHTTP_NO_REFERER,
+                                    WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                    WINHTTP_FLAG_SECURE);
+  if (!hr) { WinHttpCloseHandle(hc); WinHttpCloseHandle(hs); return ""; }
+  // GitHub API requires a User-Agent header (set via WinHttpOpen) and
+  // accepts an Accept header for the v3 JSON content type.
+  WinHttpAddRequestHeaders(hr, L"Accept: application/vnd.github+json",
+                           (DWORD)-1L, WINHTTP_ADDREQ_FLAG_ADD);
+  std::string result;
+  if (WinHttpSendRequest(hr, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                         WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+      WinHttpReceiveResponse(hr, nullptr)) {
+    DWORD avail = 0;
+    while (WinHttpQueryDataAvailable(hr, &avail) && avail > 0) {
+      std::vector<char> buf(avail);
+      DWORD read = 0;
+      if (!WinHttpReadData(hr, buf.data(), avail, &read)) break;
+      result.append(buf.data(), read);
+    }
+  }
+  WinHttpCloseHandle(hr);
+  WinHttpCloseHandle(hc);
+  WinHttpCloseHandle(hs);
+  return result;
+}
+
+// Streaming WinHTTP GET to a file. Returns true on success.
+bool HttpsGetToFile(const std::wstring& host,
+                    const std::wstring& path,
+                    const fs::path& out,
+                    const wchar_t* user_agent,
+                    DWORD timeout_ms = 60000) {
+  HINTERNET hs = WinHttpOpen(user_agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+  if (!hs) return false;
+  WinHttpSetTimeouts(hs, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
+  HINTERNET hc = WinHttpConnect(hs, host.c_str(),
+                                INTERNET_DEFAULT_HTTPS_PORT, 0);
+  if (!hc) { WinHttpCloseHandle(hs); return false; }
+  HINTERNET hr = WinHttpOpenRequest(hc, L"GET", path.c_str(), nullptr,
+                                    WINHTTP_NO_REFERER,
+                                    WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                    WINHTTP_FLAG_SECURE);
+  if (!hr) { WinHttpCloseHandle(hc); WinHttpCloseHandle(hs); return false; }
+  // GitHub release asset URLs return 302 to a CDN; follow redirects.
+  DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+  WinHttpSetOption(hr, WINHTTP_OPTION_REDIRECT_POLICY, &redirect,
+                   sizeof(redirect));
+  bool ok = false;
+  if (WinHttpSendRequest(hr, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                         WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+      WinHttpReceiveResponse(hr, nullptr)) {
+    std::error_code ec;
+    fs::create_directories(out.parent_path(), ec);
+    std::ofstream f(out, std::ios::binary | std::ios::trunc);
+    if (f) {
+      DWORD avail = 0;
+      ok = true;
+      while (ok && WinHttpQueryDataAvailable(hr, &avail) && avail > 0) {
+        std::vector<char> buf(avail);
+        DWORD read = 0;
+        if (!WinHttpReadData(hr, buf.data(), avail, &read)) { ok = false; break; }
+        f.write(buf.data(), read);
+        if (!f) { ok = false; break; }
+      }
+    }
+  }
+  WinHttpCloseHandle(hr);
+  WinHttpCloseHandle(hc);
+  WinHttpCloseHandle(hs);
+  return ok;
+}
+
+// Hand-rolled extract of a JSON string field. Looks for "<key>"\s*:\s*"...".
+// Good enough for GitHub's release JSON shape; avoids pulling in a JSON
+// dependency for this one feature.
+std::string JsonStringField(const std::string& json, const std::string& key) {
+  std::string needle = "\"" + key + "\"";
+  size_t i = json.find(needle);
+  if (i == std::string::npos) return "";
+  i += needle.size();
+  while (i < json.size() && (json[i] == ' ' || json[i] == '\t' ||
+                             json[i] == ':' || json[i] == '\n' ||
+                             json[i] == '\r'))
+    ++i;
+  if (i >= json.size() || json[i] != '"') return "";
+  ++i;
+  std::string out;
+  while (i < json.size() && json[i] != '"') {
+    if (json[i] == '\\' && i + 1 < json.size()) {
+      char n = json[i + 1];
+      if (n == 'n') out.push_back('\n');
+      else if (n == 'r') out.push_back('\r');
+      else if (n == 't') out.push_back('\t');
+      else out.push_back(n);
+      i += 2;
+    } else {
+      out.push_back(json[i++]);
+    }
+  }
+  return out;
+}
+
+// Crude semver compare. Drops a leading "v" then compares numeric
+// segments left-to-right. Returns >0 if a>b, <0 if a<b, 0 if equal.
+int CompareVersion(const std::string& a, const std::string& b) {
+  auto strip = [](const std::string& s) {
+    return (!s.empty() && (s[0] == 'v' || s[0] == 'V')) ? s.substr(1) : s;
+  };
+  std::string sa = strip(a), sb = strip(b);
+  size_t i = 0, j = 0;
+  while (i < sa.size() || j < sb.size()) {
+    int na = 0, nb = 0;
+    while (i < sa.size() && isdigit((unsigned char)sa[i])) {
+      na = na * 10 + (sa[i++] - '0');
+    }
+    while (j < sb.size() && isdigit((unsigned char)sb[j])) {
+      nb = nb * 10 + (sb[j++] - '0');
+    }
+    if (na != nb) return na - nb;
+    if (i < sa.size() && sa[i] == '.') ++i;
+    if (j < sb.size() && sb[j] == '.') ++j;
+  }
+  return 0;
+}
+
+}  // namespace
+
+namespace {
+// All the work — network I/O + modal MessageBox + download +
+// ShellExecute — happens on a worker thread so the tray menu handler
+// (which runs on WeaselServer's main thread alongside IPC servicing for
+// every running app's TSF) returns instantly. Otherwise typing freezes
+// in every host process for the duration of the HTTP call and dialog.
+// Return value is unused (the thread is detached); kept as bool only to
+// avoid touching every `return true;` site below.
+bool check_update_worker() {
+  const wchar_t* UA = L"TypeAnything-Updater/1.0";
+  const wchar_t* HOST = L"api.github.com";
+  const wchar_t* PATH =
+      L"/repos/A-cat-with-carrots/TypeAnything/releases/latest";
+
+  std::string body = HttpsGet(HOST, PATH, UA);
+  if (body.empty()) {
+    MessageBoxW(NULL,
+                L"无法连接 GitHub。请检查网络后重试。",
+                L"TypeAnything 更新检查",
+                MB_OK | MB_ICONWARNING);
+    return true;
+  }
+
+  std::string tag = JsonStringField(body, "tag_name");
+  std::string dl_url = JsonStringField(body, "browser_download_url");
+  std::string release_name = JsonStringField(body, "name");
+  if (tag.empty() || dl_url.empty()) {
+    MessageBoxW(NULL,
+                L"无法解析 GitHub 返回的版本信息。",
+                L"TypeAnything 更新检查",
+                MB_OK | MB_ICONWARNING);
+    return true;
+  }
+
+  // Convert current TA_VERSION (wide literal) to a UTF-8 std::string for
+  // comparison with the GitHub tag.
+  std::string cur;
+  {
+    std::wstring wcur = TA_VERSION;
+    int n = WideCharToMultiByte(CP_UTF8, 0, wcur.data(), (int)wcur.size(),
+                                nullptr, 0, nullptr, nullptr);
+    cur.resize(n);
+    WideCharToMultiByte(CP_UTF8, 0, wcur.data(), (int)wcur.size(),
+                        cur.data(), n, nullptr, nullptr);
+  }
+
+  if (CompareVersion(tag, cur) <= 0) {
+    std::wstring msg = L"已是最新版本（" TA_VERSION L"）。";
+    MessageBoxW(NULL, msg.c_str(), L"TypeAnything 更新检查",
+                MB_OK | MB_ICONINFORMATION);
+    return true;
+  }
+
+  // Build prompt text: latest tag + release name (if any).
+  auto toWide = [](const std::string& s) {
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(),
+                                nullptr, 0);
+    std::wstring w(n, 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(),
+                        w.data(), n);
+    return w;
+  };
+  std::wstring prompt =
+      L"发现新版本：" + toWide(tag) +
+      (release_name.empty() ? L"" : (L"  " + toWide(release_name))) +
+      L"\n\n当前版本：" TA_VERSION L"\n\n立即下载并安装吗？";
+  int r = MessageBoxW(NULL, prompt.c_str(),
+                      L"TypeAnything 更新可用",
+                      MB_YESNO | MB_ICONQUESTION);
+  if (r != IDYES) return true;
+
+  // Parse host + path from dl_url. Format:
+  //   https://github.com/<owner>/<repo>/releases/download/<tag>/<file>
+  std::wstring wurl = toWide(dl_url);
+  const std::wstring scheme = L"https://";
+  if (wurl.compare(0, scheme.size(), scheme) != 0) {
+    MessageBoxW(NULL, L"下载链接格式异常。", L"TypeAnything 更新",
+                MB_OK | MB_ICONWARNING);
+    return true;
+  }
+  size_t host_start = scheme.size();
+  size_t path_start = wurl.find(L'/', host_start);
+  if (path_start == std::wstring::npos) {
+    MessageBoxW(NULL, L"下载链接格式异常。", L"TypeAnything 更新",
+                MB_OK | MB_ICONWARNING);
+    return true;
+  }
+  std::wstring dl_host = wurl.substr(host_start, path_start - host_start);
+  std::wstring dl_path = wurl.substr(path_start);
+  std::wstring file_name = dl_path.substr(dl_path.find_last_of(L'/') + 1);
+  if (file_name.empty()) file_name = L"TypeAnything-installer.exe";
+
+  // Download to %TEMP%.
+  wchar_t tmp[MAX_PATH] = {0};
+  GetTempPathW(MAX_PATH, tmp);
+  fs::path dst = fs::path(tmp) / file_name;
+  bool ok = HttpsGetToFile(dl_host, dl_path, dst, UA);
+  if (!ok) {
+    std::wstring err = L"下载失败。可以手动从浏览器打开下载页吗？\n\n"
+                       + wurl;
+    if (MessageBoxW(NULL, err.c_str(), L"TypeAnything 更新",
+                    MB_YESNO | MB_ICONWARNING) == IDYES) {
+      ShellExecuteW(NULL, L"open", wurl.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    }
+    return true;
+  }
+
+  // Launch installer. It will request UAC, kill running WeaselServer,
+  // replace binaries, restart server.
+  ShellExecuteW(NULL, L"open", dst.c_str(), NULL, NULL, SW_SHOWNORMAL);
+  return true;
+}
+}  // namespace
+
+bool WeaselServerApp::check_update() {
+  // Fire-and-forget. The worker does its own UI; we don't await it.
+  std::thread([]() { check_update_worker(); }).detach();
+  return true;
+}
 
 int WeaselServerApp::Run() {
   if (!m_server.Start())
@@ -95,46 +370,9 @@ void write_lang(const char* code) {
   if (f) f << code;
 }
 
-void show_lang_picker(HWND /*hwnd*/) {
-  // TypeAnything: free-form natural-language target picker via PS InputBox.
-  // User types anything ("English" / "学术英语" / "中二日语" / "Klingon").
-  std::filesystem::path lang_path = lang_file_path();
-  std::wstring lang_file = lang_path.wstring();
-
-  std::wstring ps;
-  ps += L"-NoProfile -WindowStyle Hidden -Command \"";
-  ps += L"Add-Type -AssemblyName Microsoft.VisualBasic;";
-  ps += L"$f='";
-  for (wchar_t c : lang_file) {
-    if (c == L'\'') ps += L"''";
-    else ps += c;
-  }
-  ps += L"';";
-  ps += L"$cur=if(Test-Path $f){";
-  ps += L"((Get-Content -LiteralPath $f -Encoding UTF8 -Raw)";
-  ps += L" -split '`r?`n' | Where-Object {$_ -and $_ -notmatch '^\s*#'} | Select-Object -First 1)";
-  ps += L"}else{'English'};";
-  ps += L"if($null -eq $cur){$cur='English'};";
-  ps += L"$msg=\"输入翻译目标，可写任意 AI 能理解的描述。`n`n";
-  ps += L"【语种】直接翻译为该语言`n";
-  ps += L"   English / 日本語 / 한국어 / Français / Deutsch / Español / 粵語 / Türkçe`n`n";
-  ps += L"【圈层风格】加入特定群体的说话方式`n";
-  ps += L"   金融式说话 / 留学生式说话 / 互联网黑话 / 程序员式说话`n";
-  ps += L"   学术大佬式 / HR 式 / 销售式 / 二次元`n";
-  ps += L"   东北话 / 港式中文 / 台湾腔 / 老北京话`n`n";
-  ps += L"【场景/文体】指定语气、年代、媒介`n";
-  ps += L"   学术英语 / 商务日语 / 古汉语风格 / 网络流行语`n";
-  ps += L"   知乎体 / 小红书种草体 / 公众号文章体 / B站弹幕体`n`n";
-  ps += L"【虚构/自定义】AI 自由发挥`n";
-  ps += L"   像鲁迅一样的英语 / 像周杰伦歌词 / 港片黑帮台词`n";
-  ps += L"   Klingon battle prose / 火星文 / Spanish chilango\";";
-  ps += L"$r=[Microsoft.VisualBasic.Interaction]::InputBox($msg,'TypeAnything 切换语言',$cur);";
-  ps += L"if($r){[System.IO.File]::WriteAllText($f,$r,";
-  ps += L"(New-Object System.Text.UTF8Encoding $false))}\"";
-
-  ShellExecuteW(NULL, L"open", L"powershell.exe", ps.c_str(),
-                NULL, SW_SHOWNORMAL);
-}
+// NOTE: the old PowerShell-InputBox language picker (show_lang_picker) was
+// removed — the tray menu now opens ta-settings.exe --page lang instead
+// (see SetupMenuHandlers / ID_WEASELTRAY_SWITCH_LANG below).
 
 }  // namespace
 

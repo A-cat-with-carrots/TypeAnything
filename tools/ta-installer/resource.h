@@ -17,6 +17,7 @@
 #define IDR_TARGET_UI_PNG   2004
 
 #define IDR_SCHEMA_YAML     3001
+#define IDR_DICT_YAML       3002
 
 #define IDR_INSTALL_HTML    4001
 #define IDR_INSTALL_CSS     4002

@@ -208,6 +208,23 @@ static std::string ExtractYamlField(const std::string& yaml, const std::string& 
   return "";
 }
 
+// Sanitize a value before splicing it into a YAML scalar. Strips line
+// breaks (no field should ever contain newlines — they would inject new
+// YAML keys downstream); for the quoted form also escapes the chars that
+// would close the double-quoted scalar.
+static std::string SanitizeYamlValue(const std::string& v, bool quoted) {
+  std::string r;
+  r.reserve(v.size());
+  for (char c : v) {
+    if (c == '\n' || c == '\r') continue;  // drop line breaks
+    if (quoted) {
+      if (c == '\\' || c == '"') r.push_back('\\');
+    }
+    r.push_back(c);
+  }
+  return r;
+}
+
 // Replace the value portion of `<indent><key>:<spaces>...` on the first
 // matching line. Quoted controls whether the new value is wrapped in "".
 static std::string ReplaceYamlField(const std::string& yaml,
@@ -233,7 +250,8 @@ static std::string ReplaceYamlField(const std::string& yaml,
         size_t v = lead + key.size() + 1;
         while (v < line.size() && (line[v] == ' ' || line[v] == '\t')) ++v;
         std::string head = line.substr(0, v);
-        std::string new_val = quoted ? "\"" + val + "\"" : val;
+        std::string sval = SanitizeYamlValue(val, quoted);
+        std::string new_val = quoted ? "\"" + sval + "\"" : sval;
         out += head + new_val;
         replaced = true;
         did = true;
@@ -395,8 +413,10 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // 4 form fields + preset row + intro + get-key link + bottom buttons.
     // Tested heights: 720 fits all content without scroll on a 1080p
     // display with 100% scaling.
-    w.set_size(660, 620, WEBVIEW_HINT_NONE);
-    w.set_size(560, 540, WEBVIEW_HINT_MIN);
+    // Trimmed: was 620, dropped two rows after removing the get-key link
+    // and the install-prompt subtitle in the model form.
+    w.set_size(660, 640, WEBVIEW_HINT_NONE);
+    w.set_size(560, 520, WEBVIEW_HINT_MIN);
   } else {
     // Language picker is intentionally scrollable; pick a comfortable
     // initial height that shows 2-3 chip categories.

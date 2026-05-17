@@ -33,17 +33,13 @@ class WeaselServerApp {
                                     SW_SHOWNORMAL) > 32;
   }
 
-  static bool check_update() {
-    // TypeAnything: open the GitHub Releases page in the user's default
-    // browser. Avoids the WinSparkle appcast pipeline (which depends on a
-    // specifically-formatted appcast.xml hosted at a fixed upstream URL —
-    // we don't have one) and gives the user a real changelog to read.
-    ShellExecuteW(
-        NULL, L"open",
-        L"https://github.com/A-cat-with-carrots/TypeAnything/releases",
-        NULL, NULL, SW_SHOWNORMAL);
-    return true;
-  }
+  // TypeAnything: in-app update check.
+  //   * Hits GitHub releases API for the latest tag.
+  //   * If newer than the embedded version, prompts the user.
+  //   * On accept, downloads the installer .exe to %TEMP% and runs it
+  //     (the installer kills WeaselServer before replacing binaries).
+  // Implemented in WeaselServerApp.cpp.
+  static bool check_update();
 
   static fs::path install_dir() {
     WCHAR exe_path[MAX_PATH] = {0};

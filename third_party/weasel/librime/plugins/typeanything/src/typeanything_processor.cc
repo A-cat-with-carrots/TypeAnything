@@ -246,7 +246,12 @@ bool SetClipboardUtf8(const std::string& utf8) {
         if (p) {
           memcpy(p, w.c_str(), bytes);
           GlobalUnlock(h);
-          SetClipboardData(CF_UNICODETEXT, h);
+          // On success the system owns h; only free it if we keep ownership.
+          if (!SetClipboardData(CF_UNICODETEXT, h)) {
+            GlobalFree(h);
+          }
+        } else {
+          GlobalFree(h);  // GlobalLock failed — h is still ours
         }
       }
       CloseClipboard();
@@ -405,6 +410,18 @@ rime::ProcessResult TypeAnythingProcessor::ProcessKeyEvent(
   rime::Context* ctx = engine_->context();
   if (ctx && ctx->IsComposing()) return rime::kNoop;
 
+  // Pure mode (user toggled "纯净模式" in lang picker): drop the
+  // accumulated buffer but return kNoop so Enter falls through to the
+  // host app — gives normal newline/submit behavior.
+  {
+    std::string lang_now = ResolveTargetLang();
+    if (lang_now == "off" || lang_now == "Off" || lang_now == "none" ||
+        lang_now == "None" || lang_now == "no-translate") {
+      accumulated_.clear();
+      return rime::kNoop;
+    }
+  }
+
   std::string chinese = std::move(accumulated_);
   accumulated_.clear();
   DispatchTranslate(chinese);
@@ -415,6 +432,11 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
   uint64_t this_id = request_id_.fetch_add(1) + 1;
   size_t chinese_chars = Utf8CodePointCount(chinese);
   std::string lang = ResolveTargetLang();
+  // No-translate mode: skip LLM call when the lang picker selects "off".
+  if (lang == "none" || lang == "None" || lang == "no-translate" ||
+      lang == "off" || lang == "Off") {
+    return;
+  }
   std::string api_key = api_key_;
   std::string model = model_;
   std::string endpoint = endpoint_;

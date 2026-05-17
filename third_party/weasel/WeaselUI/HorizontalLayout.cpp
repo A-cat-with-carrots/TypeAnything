@@ -33,12 +33,12 @@ void HorizontalLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
   }
   int base_offset = ((_style.hilited_mark_color & 0xff000000)) ? mark_gap : 0;
 
-  // calc page indicator
+  // calc page indicator. Measure even when inline_preedit is on —
+  // TypeAnything places the ◀ ▶ buttons on the candidate row's right
+  // end in that mode, so we still need pgszl/pgszr to be real.
   CSize pgszl, pgszr;
-  if (!IsInlinePreedit()) {
-    GetTextSizeDW(pre, pre.length(), pDWR->pPreeditTextFormat, pDWR, &pgszl);
-    GetTextSizeDW(next, next.length(), pDWR->pPreeditTextFormat, pDWR, &pgszr);
-  }
+  GetTextSizeDW(pre, pre.length(), pDWR->pPreeditTextFormat, pDWR, &pgszl);
+  GetTextSizeDW(next, next.length(), pDWR->pPreeditTextFormat, pDWR, &pgszr);
   bool page_en = (_style.prevpage_color & 0xff000000) &&
                  (_style.nextpage_color & 0xff000000);
   int pgw = page_en ? (pgszl.cx + pgszr.cx + _style.hilite_spacing +
@@ -220,14 +220,45 @@ void HorizontalLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
   }
   _highlightRect = _candidateRects[id];
   UpdateStatusIconLayout(&width, &height);
+
+  // When inline_preedit is on, the preedit row is empty (preedit lives at
+  // the editor cursor) so the original page-arrow rect — which centers on
+  // _preeditRect — has nowhere to land. TypeAnything wants Microsoft-IME-
+  // style ◀ ▶ on the right end of the candidate row instead. Reserve
+  // horizontal space here so the buttons don't overlap candidates.
+  auto color_not_transparent = [](unsigned int c) {
+    return (c & 0xff000000) != 0;
+  };
+  bool inline_pager =
+      page_en && candidates_count && _style.inline_preedit &&
+      (color_not_transparent(_style.prevpage_color) ||
+       color_not_transparent(_style.nextpage_color));
+  int inline_pager_w = inline_pager
+                           ? (pgw + _style.hilite_padding_x * 2)
+                           : 0;
+  width += inline_pager_w;
+
   _contentSize.SetSize(width + offsetX, height + 2 * offsetY);
   _contentRect.SetRect(0, 0, _contentSize.cx, _contentSize.cy);
 
-  // calc page indicator
-  if (page_en && candidates_count && !_style.inline_preedit) {
-    int _prex = _contentSize.cx - offsetX - real_margin_x +
-                _style.hilite_padding_x - pgw;
-    int _prey = (_preeditRect.top + _preeditRect.bottom) / 2 - pgszl.cy / 2;
+  // calc page indicator — on the preedit row when there is one, otherwise
+  // (inline_preedit) on the candidate row's right end.
+  if (page_en && candidates_count) {
+    int _prex, _prey;
+    if (_style.inline_preedit && candidates_count > 0) {
+      const CRect& cand_rect = _candidateRects[0];
+      _prey = (cand_rect.top + cand_rect.bottom) / 2 - pgszl.cy / 2;
+      _prex = _contentSize.cx - offsetX - real_margin_x +
+              _style.hilite_padding_x - pgw;
+    } else if (!_style.inline_preedit) {
+      _prex = _contentSize.cx - offsetX - real_margin_x +
+              _style.hilite_padding_x - pgw;
+      _prey = (_preeditRect.top + _preeditRect.bottom) / 2 - pgszl.cy / 2;
+    } else {
+      _prePageRect.SetRectEmpty();
+      _nextPageRect.SetRectEmpty();
+      goto skip_page;
+    }
     _prePageRect.SetRect(_prex, _prey, _prex + pgszl.cx, _prey + pgszl.cy);
     _nextPageRect.SetRect(_prePageRect.right + _style.hilite_spacing, _prey,
                           _prePageRect.right + _style.hilite_spacing + pgszr.cx,
@@ -237,6 +268,7 @@ void HorizontalLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
       _nextPageRect.OffsetRect(-STATUS_ICON_SIZE, 0);
     }
   }
+skip_page:;
 
   // prepare temp rect _bgRect for roundinfo calculation
   CopyRect(_bgRect, _contentRect);

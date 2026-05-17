@@ -135,7 +135,7 @@ main {
   z-index: 1;
   flex: 1;
   overflow-y: auto;
-  padding: 22px 28px 28px;
+  padding: 16px 28px 20px;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -159,6 +159,11 @@ main::-webkit-scrollbar-thumb:hover {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Page-title chip vanishes when empty so welcome page has no redundant label. */
+.title .page-title:empty {
+  display: none;
+}
+
 /* ─── Eyebrow + heading ─────────────────────────────────────────── */
 .eyebrow {
   font-family: var(--font-sans);
@@ -172,19 +177,20 @@ main::-webkit-scrollbar-thumb:hover {
 
 h1 {
   font-family: var(--font-serif);
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 700;
   line-height: 1.2;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   letter-spacing: -0.01em;
 }
 h1 .accent { color: var(--accent); }
 
 .sub {
-  color: var(--muted);
+  color: var(--ink);
+  opacity: 0.72;
   font-size: 13.5px;
-  line-height: 1.6;
-  margin: 0 0 22px;
+  line-height: 1.55;
+  margin: 0 0 14px;
   max-width: 56ch;
 }
 
@@ -293,6 +299,21 @@ h1 .accent { color: var(--accent); }
   filter: brightness(1.08);
   box-shadow: 0 4px 14px rgba(212, 178, 122, 0.32);
 }
+
+/* Ghost variant — text-link style, no border. Primary CTA wins visually. */
+.btn.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  min-width: 0;
+  padding: 0 14px;
+  letter-spacing: 0.04em;
+}
+.btn.ghost:hover {
+  color: var(--accent);
+  background: transparent;
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -404,7 +425,7 @@ h1 .accent { color: var(--accent); }
 .actions {
   display: flex; gap: 10px;
   justify-content: flex-end;
-  padding-top: 4px;
+  margin-top: 28px;
 }
 
 /* ─── Toast ─────────────────────────────────────────────────────── */
@@ -536,3 +557,66 @@ h1 .accent { color: var(--accent); }
 .log li.error::before { content: "✕"; color: #e88080; }
 
 #progressMsg { color: var(--ink); font-weight: 500; }
+
+/* Install location row */
+.install-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 4px;
+  padding: 8px 12px;
+  background: rgba(244, 241, 234, 0.04);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+.install-dir-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.install-dir-path {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;       /* keep the trailing path segment visible */
+  text-align: left;
+}
+.btn-tiny {
+  height: 30px;
+  min-width: 0;
+  padding: 0 12px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+
+/* Welcome page bullets */
+.bullets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bullets li {
+  font-size: 13.5px;
+  color: var(--ink);
+  padding-left: 22px;
+  position: relative;
+  line-height: 1.55;
+}
+.bullets li::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+.bullets strong { color: var(--accent); font-weight: 600; }

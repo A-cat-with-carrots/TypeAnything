@@ -360,7 +360,17 @@ cd ..
 
 ## 版本历史
 
-### v0.5（当前）
+### v0.6.2（当前）
+- **纯净模式** — 标题栏右侧 toggle 开关，开启后写 `off` sentinel 到 lang 文件，UI 整体置灰锁定，Enter 直通宿主（不再被 IME 吞掉），实际效果 = 纯拼音中文输入法。模型配置页不显示该开关。
+- **UI 收尾打磨**
+  - chip 点击后输入框光标置末尾、无蓝色高亮（`setSelectionRange(n,n)` 替代 `select()`）
+  - 用户手动编辑或聚焦时清除 chip 的 active 高亮
+  - 保存 toast 简化为「已保存」，不附带值
+  - 保存后不再自动关窗 — 用户可继续改
+  - 「off」sentinel 在输入框显示为「无」
+  - 模型配置页加 endpoint live preview（`POST  https://host{path}`）+ 2-column form-grid 排版，窗口 660×640
+
+### v0.5
 - **WebView2 设置面板** — 托盘的「切换风格」+「模型配置」从 PowerShell InputBox / WinForms 改为独立 `ta-settings.exe` 嵌 WebView2 + HTML/CSS
   - hrdai dark editorial 设计（teal `#15212a` + 金 `#d4b27a`，Noto Serif SC 衬线 + Inter sans）
   - 神仙鱼 ICO 嵌入资源 → 窗口 / 任务栏图标

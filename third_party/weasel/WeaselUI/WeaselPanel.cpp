@@ -389,9 +389,12 @@ LRESULT WeaselPanel::OnLeftClickedDown(UINT uMsg,
     }
   }
   {
-    if (!m_style.inline_preedit && m_candidateCount != 0 &&
-        COLORNOTTRANSPARENT(m_style.prevpage_color) &&
-        COLORNOTTRANSPARENT(m_style.nextpage_color)) {
+    // Page arrows are clickable in both preedit-row mode and inline-
+    // preedit mode (TypeAnything: HorizontalLayout puts the rects on
+    // the candidate row when inline_preedit is on).
+    if (m_candidateCount != 0 &&
+        (COLORNOTTRANSPARENT(m_style.prevpage_color) ||
+         COLORNOTTRANSPARENT(m_style.nextpage_color))) {
       // click prepage
       if (m_ctx.cinfo.currentPage != 0) {
         CRect prc = m_layout->GetPrepageRect();
@@ -981,6 +984,28 @@ bool WeaselPanel::_DrawCandidates(CDCHandle& dc, bool back) {
       }
     }
   }
+  // TypeAnything: when inline_preedit is on, the original page-button
+  // drawing in _DrawPreedit never runs (no preedit row). Draw the ◀ ▶
+  // arrows here so the user still has MS-IME-style page navigation.
+  if (!back && m_style.inline_preedit && m_candidateCount &&
+      (COLORNOTTRANSPARENT(m_style.prevpage_color) ||
+       COLORNOTTRANSPARENT(m_style.nextpage_color))) {
+    const std::wstring pre = L"<";
+    const std::wstring next = L">";
+    auto pgFormat = pDWR->pTextFormat.Get();
+    CRect prc = m_layout->GetPrepageRect();
+    if (!prc.IsRectEmpty()) {
+      int color =
+          m_ctx.cinfo.currentPage ? m_style.prevpage_color : m_style.text_color;
+      _TextOut(prc, pre.c_str(), pre.length(), color, pgFormat);
+    }
+    CRect nrc = m_layout->GetNextpageRect();
+    if (!nrc.IsRectEmpty()) {
+      int color =
+          m_ctx.cinfo.is_last_page ? m_style.text_color : m_style.nextpage_color;
+      _TextOut(nrc, next.c_str(), next.length(), color, pgFormat);
+    }
+  }
   return drawn;
 }
 
@@ -1185,7 +1210,7 @@ void WeaselPanel::MoveTo(RECT const& rc) {
     m_sticky = false;
     // Force reposition the window
     m_inputPos = rc;
-    m_inputPos.OffsetRect(0, 6);
+    m_inputPos.OffsetRect(0, 0);   // TypeAnything: pill flush against preedit baseline (was +6)
     _RepositionWindow(true);
     RedrawWindow();
     return;
@@ -1206,7 +1231,7 @@ void WeaselPanel::MoveTo(RECT const& rc) {
     // in some apps like word 2021, with inline_preedit set,
     // bottom of rc would flicker 1 px or 2, make the candidate flickering
     m_inputPos = rc;
-    m_inputPos.OffsetRect(0, 6);
+    m_inputPos.OffsetRect(0, 0);   // TypeAnything: pill flush against preedit baseline (was +6)
     // buffer current m_istorepos status
     bool m_istorepos_buf = m_istorepos;
     // with parameter to avoid vertical flicker

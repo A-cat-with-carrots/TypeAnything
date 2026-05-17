@@ -50,8 +50,6 @@ speller:
   algebra:
     - erase/^xx$/
     - derive/^([jqxy])u$/$1v/
-    - derive/^([aoe])(.*)$/o$1$2/
-    - xform/^([aoe])(.*)$/$1$1$2/
     # 模糊音匹配：声母简写（zh→z / ch→c / sh→s）
     - derive/^([zcs])h/$1/
     # 首字母缩写：每个音节只输首字母，例如 xz→现在 / bjdx→北京大学
@@ -60,7 +58,10 @@ speller:
     - abbrev/^([a-z]{2}).+$/$1/
 
 translator:
-  dictionary: luna_pinyin
+  # typeanything.dict.yaml imports luna_pinyin and adds modern terms
+  # (AI / LLM / IT / social-media / network slang) that luna_pinyin's
+  # 2024-02 dict still misses — see typeanything.dict.yaml for the list.
+  dictionary: typeanything
   prism: typeanything
   # ----- User-dictionary learning -----
   # Rime accumulates per-user frequency on every commit. After a few hundred
@@ -71,19 +72,26 @@ translator:
   enable_completion: true    # surface abbrev / partial matches
   initial_quality: 1.2       # boost user_dict over base dict slightly
   preedit_format:
+    - "xform/ /'/"        # show inter-syllable boundary as ' (MS-IME style)
     - xform/([nljqxy])v/$1ü/
 
 simplification_filter:
   option_name: simplification
   opencc_config: t2s.json
 
-# Punctuation: direct single mapping. No candidate-popup ever. Mode-aware:
-#   * ascii_mode=true → ASCII / half-width
-#   * ascii_mode=false → 中文 全角 (symmetric quotes auto-paired)
-# This matches Microsoft IME behaviour. Each key emits one candidate so no
-# selection window appears.
+# Punctuation: direct single mapping. No candidate-popup ever.
+#
+# The Chinese punctuation lives in the `half_shape` block on purpose.
+# punctuator.cc picks `full_shape` vs `half_shape` from the "full_shape"
+# context option, NOT from ascii_mode. This schema ships no full_shape
+# switch, so the option is always false and `half_shape` is what runs in
+# Chinese mode — exactly where we want 中文标点.
+#   * ascii_mode=true  → ascii_composer passes raw ASCII, punctuator idle
+#   * ascii_mode=false → half_shape below → 中文 punctuation
+# (Putting these in `full_shape` instead would force the whole IME into
+#  全角 mode and turn typed letters into Ｆｕｌｌｗｉｄｔｈ.)
 punctuator:
-  full_shape:
+  half_shape:
     " " : "　"
     "," : "，"
     "." : "。"
@@ -117,39 +125,6 @@ punctuator:
     "~" : "～"
     "'" : { pair: [ "'", "'" ] }
     '"' : { pair: [ "“", "”" ] }
-  half_shape:
-    "," : ","
-    "." : "."
-    ";" : ";"
-    ":" : ":"
-    "?" : "?"
-    "!" : "!"
-    "\\" : "\\"
-    "/" : "/"
-    "(" : "("
-    ")" : ")"
-    "[" : "["
-    "]" : "]"
-    "{" : "{"
-    "}" : "}"
-    "<" : "<"
-    ">" : ">"
-    "@" : "@"
-    "#" : "#"
-    "$" : "$"
-    "%" : "%"
-    "^" : "^"
-    "&" : "&"
-    "*" : "*"
-    "-" : "-"
-    "_" : "_"
-    "=" : "="
-    "+" : "+"
-    "|" : "|"
-    "`" : "`"
-    "~" : "~"
-    "'" : "'"
-    '"' : '"'
 
 key_binder:
   import_preset: default

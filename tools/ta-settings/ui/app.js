@@ -30,6 +30,10 @@ function showPage(name) {
   if (el) el.hidden = false;
   document.getElementById("pageTitle").textContent =
     name === "model" ? "模型配置" : "切换风格";
+  // 纯净模式 toggle belongs to the language switcher only — hide on
+  // the model-config page.
+  const tw = document.getElementById("pureToggleWrap");
+  if (tw) tw.hidden = (name !== "lang");
 }
 
 function toast(msg, kind = "ok") {
@@ -55,37 +59,109 @@ async function initLangPage() {
   // field blank so the placeholder "English" shows in muted tone.
   // Clicking puts the cursor at the leftmost position — nothing to delete.
   const DEFAULT_ALIASES = new Set(["en", "english", "english "]);
+  let currentLangValue = "";
   try {
     const cur = await window.nativeReadLang();
-    if (cur && cur.trim() && !DEFAULT_ALIASES.has(cur.trim().toLowerCase())) {
-      input.value = cur.trim();
+    currentLangValue = (cur || "").trim();
+    if (currentLangValue && !DEFAULT_ALIASES.has(currentLangValue.toLowerCase())) {
+      // Show "无" instead of "off" — friendlier UI label.
+      input.value = currentLangValue.toLowerCase() === "off"
+                      ? "无"          // 无
+                      : currentLangValue;
     }
   } catch (e) {}
 
-  // Click chip → fill input
+  // 纯净模式 toggle: lives in the titlebar (top right). When ON, write
+  // "off" to the lang file and grey out the rest of the panel so it's
+  // visually obvious that translation is disabled. When OFF, restore the
+  // previously typed value (or "English") and unlock the UI.
+  const pureToggle = document.getElementById("pureToggle");
+  const mainEl = document.querySelector("main");
+  let lastLang = "";  // remembers value before pure mode flip-on
+  function applyPureLock(on) {
+    if (mainEl) {
+      mainEl.classList.toggle("pure-locked", !!on);
+    }
+    // Disable form controls inside the page so keyboard tabbing also
+    // can't reach them while locked.
+    document.querySelectorAll("#page-lang input, #page-lang button.chip, #page-lang .btn.primary")
+      .forEach(el => { el.disabled = !!on; });
+  }
+  if (pureToggle) {
+    // Initial state: reflect current lang file.
+    try {
+      const cur = (typeof currentLangValue === "string" ? currentLangValue : "");
+      if (cur.toLowerCase() === "off") {
+        pureToggle.checked = true;
+        applyPureLock(true);
+      }
+    } catch (e) {}
+    pureToggle.addEventListener("change", async () => {
+      if (pureToggle.checked) {
+        const cur = input.value.trim();
+        if (cur && cur !== "无") lastLang = cur;
+        input.value = "无";  // 无 — friendly display
+        applyPureLock(true);
+        try { await window.nativeWriteLang("off"); } catch (e) {}
+      } else {
+        const restore = lastLang || input.placeholder || "English";
+        input.value = restore;
+        applyPureLock(false);
+        try { await window.nativeWriteLang(restore); } catch (e) {}
+      }
+    });
+  }
+
+  // Click chip → fill input.
+  function clearChipActive() {
+    document.querySelectorAll(".chip.active").forEach(x => x.classList.remove("active"));
+  }
   document.querySelectorAll(".chip").forEach(c => {
     c.addEventListener("click", () => {
-      input.value = c.textContent;
+      input.value = c.dataset.value || c.textContent;
       input.focus();
-      input.select();
-      // brief highlight
-      document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
+      const n = input.value.length;
+      input.setSelectionRange(n, n);
+      clearChipActive();
       c.classList.add("active");
     });
+  });
+  // Any manual edit invalidates the chip "selected" state.
+  input.addEventListener("input", clearChipActive);
+  input.addEventListener("focus", () => {
+    const v = input.value.trim();
+    let match = null;
+    document.querySelectorAll(".chip").forEach(c => {
+      const cv = (c.dataset.value || c.textContent || "").trim();
+      if (cv === v) match = c;
+    });
+    if (!match) clearChipActive();
   });
 
   // Save: write lang.txt + close. Empty input falls back to the placeholder
   // default ("English"), so user can just press Save without typing anything.
+  // Display "无" for the "off" sentinel; keep the file's stored value
+  // ASCII so the plugin's compare stays codepage-safe.
+  const PURE_DISPLAY = "无";          // 无
+  function toStoredLang(v) {
+    return (v && v.trim() === PURE_DISPLAY) ? "off" : v;
+  }
+  function fromStoredLang(v) {
+    return (v && v.trim().toLowerCase() === "off") ? PURE_DISPLAY : v;
+  }
+
   async function save() {
     let v = input.value.trim();
     if (!v) v = input.placeholder || "English";
+    v = toStoredLang(v);
     saveBtn.disabled = true;
     try {
       await window.nativeWriteLang(v);
-      toast("已保存：" + v, "ok");
-      setTimeout(() => window.nativeClose(), 700);
+      toast("已保存", "ok");
+      // Stay open — user may want to make more changes. They close with X.
     } catch (e) {
       toast("保存失败：" + (e && e.message || e), "error");
+    } finally {
       saveBtn.disabled = false;
     }
   }
@@ -115,6 +191,22 @@ async function initModelPage() {
     }
   } catch (e) {}
 
+  // Live endpoint preview — show full URL the request will hit.
+  const ep = document.getElementById("endpointPreview");
+  function refreshPreview() {
+    if (!ep) return;
+    const h = (f.host.value || "").trim();
+    const p = (f.path.value || "").trim();
+    if (!h && !p) { ep.classList.add("empty"); ep.textContent = ""; return; }
+    const scheme = /^localhost(:|$)|^127\.|^\d+\.\d+\.\d+\.\d+/.test(h) ? "http" : "https";
+    const pp = p.startsWith("/") ? p : ("/" + p);
+    ep.classList.remove("empty");
+    ep.textContent = "POST  " + scheme + "://" + h + pp;
+  }
+  refreshPreview();
+  f.host.addEventListener("input", refreshPreview);
+  f.path.addEventListener("input", refreshPreview);
+
   // Preset buttons
   document.querySelectorAll(".preset").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -123,19 +215,16 @@ async function initModelPage() {
       f.model.value = p.model;
       f.host.value  = p.host;
       f.path.value  = p.path;
-      toast("已套用 " + btn.textContent + " 预设。还需填 API Key。", "ok");
+      refreshPreview();
       f.apiKey.focus();
+      document.querySelectorAll(".preset").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
     });
   });
 
   // Show / hide API key
   document.getElementById("toggleKey").addEventListener("click", () => {
     f.apiKey.type = f.apiKey.type === "password" ? "text" : "password";
-  });
-
-  // Open get-key link
-  document.getElementById("getKeyLink").addEventListener("click", () => {
-    window.nativeOpenUrl("https://platform.deepseek.com/");
   });
 
   // Cancel

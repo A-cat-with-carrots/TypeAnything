@@ -325,7 +325,7 @@ std::wstring lang_file_path() {
   PWSTR path_str = nullptr;
   std::wstring p;
   if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &path_str))) {
-    p = std::wstring(path_str) + L"\Rime\typeanything_lang.txt";
+    p = std::wstring(path_str) + L"\\Rime\\typeanything_lang.txt";
     CoTaskMemFree(path_str);
   } else {
     p = L"typeanything_lang.txt";
@@ -343,37 +343,25 @@ void write_lang_code(const char* code) {
   CloseHandle(h);
 }
 
-void spawn_ta_settings(const wchar_t* page) {
-  // TypeAnything: open the modern WebView2-based settings UI for either
-  //   --page lang   (language picker)
-  //   --page model  (model config)
-  // ta-settings.exe ships next to the other Weasel binaries; locate it via
-  // the WeaselRoot registry value.
-  std::wstring root;
-  RegGetStringValue(HKEY_LOCAL_MACHINE, GetWeaselRegName(),
-                    L"WeaselRoot", root);
-  if (root.empty()) {
-    root = L"C:\Program Files\Rime\weasel-0.17.4";
-  }
-  std::wstring exe  = root + L"\ta-settings.exe";
-  std::wstring args = std::wstring(L"--page ") + page;
-  ShellExecuteW(NULL, L"open", exe.c_str(), args.c_str(),
-                root.c_str(), SW_SHOWNORMAL);
-}
+// NOTE: spawn_ta_settings (which opened ta-settings.exe directly from
+// the in-app TSF) was removed. Menu clicks for "Switch Language" / "Model
+// Config" now forward the tray-command ID over IPC to WeaselServer, which
+// owns the ShellExecute. See WeaselServerApp::SetupMenuHandlers and
+// _HandleLangBarMenuSelect's fall-through to m_client.TrayCommand.
 
 }  // namespace
 
 void WeaselTSF::_HandleLangBarMenuSelect(UINT wID) {
+  // TypeAnything: ID_WEASELTRAY_SWITCH_LANG and ID_WEASELTRAY_MODEL_CONFIG
+  // used to spawn ta-settings.exe directly from this in-app TSF DLL. They
+  // now fall through to the default branch, which forwards the menu ID to
+  // WeaselServer over IPC; WeaselServer's tray-menu handler does the
+  // ShellExecute. Reason: bugs in that handler then only need a server
+  // restart to ship a fix, not an app restart of every process that has
+  // weasel.dll mapped (the DLL is read-only-mapped on every host
+  // process and can't be hot-swapped without restarting that process).
   std::wstring dir{};
   switch (wID) {
-    case ID_WEASELTRAY_SWITCH_LANG: {
-      spawn_ta_settings(L"lang");
-      return;
-    }
-    case ID_WEASELTRAY_MODEL_CONFIG: {
-      spawn_ta_settings(L"model");
-      return;
-    }
     case ID_WEASELTRAY_RERUN_SERVICE:
     case ID_WEASELTRAY_INSTALLDIR:
       if (RegGetStringValue(HKEY_LOCAL_MACHINE, GetWeaselRegName(),

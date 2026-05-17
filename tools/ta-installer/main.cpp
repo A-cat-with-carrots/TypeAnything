@@ -19,10 +19,13 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <shobjidl.h>   // IFileOpenDialog (folder picker)
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "oleaut32.lib")
 
 #include <atomic>
 #include <chrono>
@@ -204,6 +207,101 @@ static fs::path WeaselDir() {
     RegCloseKey(hKey);
   }
   return fs::path(L"C:\\Program Files\\Rime\\weasel-0.17.4");
+}
+
+// IFileOpenDialog folder picker. Returns the selected path (UTF-8) or
+// "" if user cancelled / on error. Initial location: `start` if provided.
+static std::string PickInstallDir(HWND parent, const std::wstring& start) {
+  std::string out;
+  IFileOpenDialog* dlg = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&dlg));
+  if (FAILED(hr) || !dlg) return out;
+  DWORD opt = 0;
+  dlg->GetOptions(&opt);
+  dlg->SetOptions(opt | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM);
+  dlg->SetTitle(L"选择 TypeAnything 安装位置");
+  if (!start.empty()) {
+    // Try to set initial folder. Best-effort: walk up until a path exists.
+    std::filesystem::path p(start);
+    std::error_code ec;
+    while (!p.empty() && !std::filesystem::exists(p, ec)) {
+      auto parent = p.parent_path();
+      if (parent == p) break;
+      p = parent;
+    }
+    if (!p.empty()) {
+      IShellItem* item = nullptr;
+      if (SUCCEEDED(SHCreateItemFromParsingName(p.c_str(), NULL,
+                                                IID_PPV_ARGS(&item))) && item) {
+        dlg->SetFolder(item);
+        item->Release();
+      }
+    }
+  }
+  if (SUCCEEDED(dlg->Show(parent))) {
+    IShellItem* res = nullptr;
+    if (SUCCEEDED(dlg->GetResult(&res)) && res) {
+      PWSTR path = nullptr;
+      if (SUCCEEDED(res->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path) {
+        out = WideToUtf8(path);
+        CoTaskMemFree(path);
+      }
+      res->Release();
+    }
+  }
+  dlg->Release();
+  return out;
+}
+
+// Write HKLM\Software\Rime\Weasel\WeaselRoot = <install_dir>. Also writes
+// the 32-bit redirected view so legacy / 32-bit consumers (WeaselSetup,
+// any apps that read under WOW6432Node) see the same value.
+static void WriteWeaselRootRegistry(const fs::path& install_dir) {
+  std::wstring val = install_dir.wstring();
+  REGSAM views[] = {KEY_WRITE | KEY_WOW64_64KEY, KEY_WRITE | KEY_WOW64_32KEY};
+  for (REGSAM v : views) {
+    HKEY h;
+    if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Rime\\Weasel",
+                        0, NULL, 0, v, NULL, &h, NULL) == ERROR_SUCCESS) {
+      RegSetValueExW(h, L"WeaselRoot", 0, REG_SZ,
+                     (const BYTE*)val.c_str(),
+                     (DWORD)((val.size() + 1) * sizeof(wchar_t)));
+      RegCloseKey(h);
+    }
+  }
+}
+
+// Write Add/Remove Programs entry pointing at uninstall.exe in install dir.
+static void WriteUninstallRegistry(const fs::path& install_dir,
+                                   const std::wstring& version_str) {
+  HKEY h;
+  if (RegCreateKeyExW(HKEY_LOCAL_MACHINE,
+                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\TypeAnything",
+                      0, NULL, 0, KEY_WRITE | KEY_WOW64_64KEY, NULL, &h, NULL)
+      != ERROR_SUCCESS) {
+    return;
+  }
+  auto sz = [](HKEY h, const wchar_t* k, const std::wstring& v) {
+    RegSetValueExW(h, k, 0, REG_SZ, (const BYTE*)v.c_str(),
+                   (DWORD)((v.size() + 1) * sizeof(wchar_t)));
+  };
+  auto dw = [](HKEY h, const wchar_t* k, DWORD v) {
+    RegSetValueExW(h, k, 0, REG_DWORD, (const BYTE*)&v, sizeof(v));
+  };
+  std::wstring uninst_exe = (install_dir / L"uninstall.exe").wstring();
+  std::wstring quoted_cmd = L"\"" + uninst_exe + L"\" /uninstall";
+  sz(h, L"DisplayName", L"TypeAnything 输入法");
+  sz(h, L"DisplayVersion", version_str);
+  sz(h, L"Publisher", L"HRDAI");
+  sz(h, L"InstallLocation", install_dir.wstring());
+  sz(h, L"UninstallString", quoted_cmd);
+  sz(h, L"DisplayIcon", uninst_exe);
+  sz(h, L"URLInfoAbout",
+     L"https://github.com/A-cat-with-carrots/TypeAnything");
+  dw(h, L"NoModify", 1);
+  dw(h, L"NoRepair", 1);
+  RegCloseKey(h);
 }
 
 static fs::path RimeUserDir() {
@@ -405,21 +503,28 @@ static void PushStatus(int percent, const std::string& msg,
 struct InstallOptions {
   std::string api_key;
   std::string target_lang;
+  std::wstring install_dir;  // empty -> default
 };
 
 static void DoInstall(InstallOptions opts) {
   bool reboot_needed = false;
 
   // 1. Stop running Weasel-family processes.
-  PushStatus(5, "停止运行中的输入法服务 …", "taskkill WeaselServer / WeaselDeployer / ta-settings");
+  PushStatus(5, "停止运行中的输入法服务 …", "停止后台进程");
   for (const wchar_t* img : {L"WeaselServer.exe", L"WeaselDeployer.exe",
                               L"WeaselTrayIcon.exe", L"ta-settings.exe"}) {
     KillByName(img);
   }
   Sleep(800);
 
-  // 2. Backup originals once, then write all binaries.
-  fs::path wdir = WeaselDir();
+  // 2. Resolve install directory + lock it into the registry so every
+  //    downstream consumer (the TSF, WeaselServer, ta-settings, the
+  //    uninstaller) finds the same path. Falls back to the previous
+  //    install or the default if the caller passed nothing.
+  fs::path wdir = !opts.install_dir.empty()
+                      ? fs::path(opts.install_dir)
+                      : WeaselDir();
+  WriteWeaselRootRegistry(wdir);
   if (!fs::exists(wdir)) {
     std::error_code ec; fs::create_directories(wdir, ec);
   }
@@ -457,21 +562,26 @@ static void DoInstall(InstallOptions opts) {
   if (fs::exists(sys32_dll) && !fs::exists(sys32_bak)) {
     std::error_code ec; fs::copy_file(sys32_dll, sys32_bak, ec);
   }
-  PushStatus(64, "替换 system32\\weasel.dll …", "system32\\weasel.dll");
+  PushStatus(64, "替换系统组件 …", "替换系统 DLL");
   WriteEmbeddedToLockableFile(MAKEINTRESOURCEW(IDR_WEASELX64_DLL), sys32_dll, &reboot_needed);
 
   // 4. ta-settings ui directory.
   fs::path ui = wdir / L"ui";
-  PushStatus(70, "释放 UI 资源 …", "ta-settings ui/");
+  PushStatus(70, "释放设置面板资源 …", "ui/ 写入完成");
   WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_HTML), ui / L"index.html");
   WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_CSS),  ui / L"style.css");
   WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_JS),   ui / L"app.js");
   WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_PNG),  ui / L"fish.png");
 
   // 5. Schema yaml with injected api_key and target_lang.
-  PushStatus(78, "写入用户配置 …", "%APPDATA%\\Rime\\typeanything.schema.yaml");
+  PushStatus(78, "写入用户配置 …", "用户配置就绪");
   {
     auto [ptr, sz] = LoadEmbedded(MAKEINTRESOURCEW(IDR_SCHEMA_YAML));
+    if (!ptr || sz == 0) {
+      PushStatus(78, "失败：内嵌 schema 资源缺失", "IDR_SCHEMA_YAML missing",
+                 "error", false, "embedded schema resource not found");
+      return;
+    }
     std::string yaml((const char*)ptr, sz);
     auto replace_first = [&](const std::string& needle, const std::string& with) {
       size_t pos = yaml.find(needle);
@@ -485,9 +595,80 @@ static void DoInstall(InstallOptions opts) {
     std::ofstream f(udir / L"typeanything.schema.yaml", std::ios::binary | std::ios::trunc);
     f.write(yaml.data(), (std::streamsize)yaml.size());
 
-    // Default custom.yaml so Deployer only sees TypeAnything.
+    // Supplement dict (modern AI / IT / social-media / slang terms that
+    // luna_pinyin lacks). Schema's translator imports luna_pinyin via
+    // typeanything.dict.yaml, so this file is required for the schema to
+    // compile.
+    if (auto [dptr, dsz] = LoadEmbedded(MAKEINTRESOURCEW(IDR_DICT_YAML));
+        dptr && dsz > 0) {
+      std::ofstream df(udir / L"typeanything.dict.yaml",
+                       std::ios::binary | std::ios::trunc);
+      df.write((const char*)dptr, (std::streamsize)dsz);
+    }
+
+    // Default custom.yaml — pin the schema list to TypeAnything, set
+    // menu page_size to 7 (Microsoft-IME parity), and force non-inline
+    // preedit in Office apps where inline-mode TSF caret reporting is
+    // broken (candidate bar would otherwise pin to the window's top-left).
     std::ofstream cf(udir / L"default.custom.yaml", std::ios::binary | std::ios::trunc);
-    cf << "patch:\n  schema_list:\n    - schema: typeanything\n";
+    cf << "patch:\n"
+       << "  schema_list:\n"
+       << "    - schema: typeanything\n"
+       << "  \"menu/page_size\": 7\n"
+       << "  app_options/winword.exe:\n    inline_preedit: false\n"
+       << "  app_options/wps.exe:\n    inline_preedit: false\n"
+       << "  app_options/wpp.exe:\n    inline_preedit: false\n"
+       << "  app_options/excel.exe:\n    inline_preedit: false\n"
+       << "  app_options/powerpnt.exe:\n    inline_preedit: false\n";
+
+    // Weasel UI: Microsoft IME look — horizontal pill, inline preedit
+    // (pinyin stays at the editor cursor, not duplicated in the candidate
+    // bar), YaHei UI font, tighter spacing, light-gray hilite (no big
+    // blue selection box). Always overwrite the patch block so a
+    // reinstall reliably restores the intended style.
+    fs::path wcust = udir / L"weasel.custom.yaml";
+    {
+      std::ofstream wf(wcust, std::ios::binary | std::ios::trunc);
+      wf <<
+        "# Managed by TypeAnything installer — Microsoft-IME-style layout.\n"
+        "patch:\n"
+        "  \"style/horizontal\": true\n"
+        "  \"style/inline_preedit\": true\n"
+        "  \"style/label_format\": \"%s \"\n"
+        "  \"style/font_face\": \"Microsoft YaHei UI\"\n"
+        "  \"style/font_point\": 11\n"
+        "  \"style/label_font_point\": 11\n"
+        "  \"style/comment_font_point\": 11\n"
+        "  \"style/margin_x\": 8\n"
+        "  \"style/margin_y\": 2\n"
+        "  \"style/hilite_padding\": 6\n"
+        "  \"style/hilite_spacing\": 0\n"
+        "  \"style/candidate_spacing\": 22\n"
+        "  \"style/color_scheme\": typeanything_light\n"
+        "  \"preset_color_schemes/typeanything_light\":\n"
+        "    name: TypeAnything Light\n"
+        "    author: HRDAI\n"
+        "    back_color: 0xFFFFFF\n"
+        "    border_color: 0xCCCCCC\n"
+        "    text_color: 0x000000\n"
+        "    hilited_text_color: 0x000000\n"
+        "    hilited_back_color: 0xFFFFFF\n"
+        "    candidate_text_color: 0x202020\n"
+        // Transparent so cells inherit panel back_color — kills the
+        // per-cell white stripe artifact between candidates.
+        "    candidate_back_color: 0x00000000\n"
+        "    hilited_candidate_text_color: 0x000000\n"
+        "    hilited_candidate_back_color: 0xE6E6E6\n"
+        "    comment_text_color: 0x808080\n"
+        "    hilited_comment_text_color: 0x808080\n"
+        "    label_color: 0x999999\n"
+        "    hilited_candidate_label_color: 0xD47800\n"
+        // Alpha byte must be 0xFF for Weasel's page_en /\n"
+        // hilited_mark color-not-transparent checks to pass.\n"
+        "    hilited_mark_color: 0xFFD47800\n"
+        "    prevpage_color: 0xFF303030\n"
+        "    nextpage_color: 0xFF303030\n";
+    }
 
     // Seed lang.txt with target (so ResolveTargetLang has something on Enter
     // before user opens the settings panel).
@@ -496,11 +677,11 @@ static void DoInstall(InstallOptions opts) {
   }
 
   // 6. Patch HKLM TSF profile descriptions.
-  PushStatus(84, "注册 TSF 描述 …", "HKLM CTF\\TIP profile description = TypeAnything");
+  PushStatus(84, "注册输入法描述 …", "TSF 描述改写为 TypeAnything");
   PatchTsfProfileDescriptions();
 
   // 7. Drop other schemas from Weasel data dir.
-  PushStatus(88, "隐藏其他方案 …", "data/*.schema.yaml");
+  PushStatus(88, "仅保留 TypeAnything 方案 …", "隐藏其他 Rime 方案");
   {
     fs::path data = wdir / L"data";
     fs::path orig = wdir / L"data.original";
@@ -522,7 +703,7 @@ static void DoInstall(InstallOptions opts) {
   }
 
   // 8. Redeploy schema + start server.
-  PushStatus(92, "编译方案 …", "WeaselDeployer /deploy");
+  PushStatus(92, "编译输入方案 …", "Rime 编译中（首次约 10-30 秒）");
   StartHidden(wdir / L"WeaselDeployer.exe", L"/deploy");
 
   // Poll for typeanything.prism.bin freshness, max 60s.
@@ -541,14 +722,14 @@ static void DoInstall(InstallOptions opts) {
   KillByName(L"WeaselDeployer.exe");
 
   if (!last_mtime_ok) {
-    PushStatus(95, "方案编译耗时偏长，继续启动 server", "deployer poll fallback",
+    PushStatus(95, "编译耗时偏长，继续启动服务", "编译超时回退，跳过等待",
                "done");
   } else {
-    PushStatus(95, "方案编译完成", "prism.bin OK", "done");
+    PushStatus(95, "方案编译完成", "方案编译完成", "done");
   }
 
   // 9. Start WeaselServer so the tray icon comes up.
-  PushStatus(98, "启动输入法服务 …", "WeaselServer.exe");
+  PushStatus(98, "启动输入法服务 …", "输入法服务上线");
   StartShown(wdir / L"WeaselServer.exe");
 
   // 10. Register autostart (HKLM\Run already done by upstream MSI usually,
@@ -566,10 +747,139 @@ static void DoInstall(InstallOptions opts) {
     }
   }
 
+  // 11. Drop a copy of ourselves as `uninstall.exe` next to the binaries
+  //     and register an Add/Remove Programs entry. The uninstaller is the
+  //     same EXE re-invoked with /uninstall — so it always matches the
+  //     installed version's layout.
+  {
+    wchar_t self[MAX_PATH] = {0};
+    GetModuleFileNameW(NULL, self, _countof(self));
+    fs::path uninst = wdir / L"uninstall.exe";
+    std::error_code ec;
+    fs::copy_file(fs::path(self), uninst,
+                  fs::copy_options::overwrite_existing, ec);
+    WriteUninstallRegistry(wdir, L"0.6.2");
+  }
+
   std::string final_msg = reboot_needed
       ? "部分文件被占用，已排队重启替换。重启电脑后完全生效。"
       : "全部完成。打开新应用即可使用。";
   PushStatus(100, final_msg, final_msg, "done", true);
+}
+
+// ─── uninstall procedure ────────────────────────────────────────
+//
+// Reverses what DoInstall did:
+//   * Kill running Weasel-family processes.
+//   * Remove HKLM\Run autostart, HKLM CTF TIP profile description patches,
+//     WeaselRoot, Uninstall reg key.
+//   * Replace system32\weasel.dll with its .bak (if any), otherwise queue
+//     deletion on reboot.
+//   * Delete the install directory.
+//   * %APPDATA%\Rime is preserved (user dict + custom yamls stay so a
+//     later reinstall doesn't lose typing history). Caller may delete it.
+
+static void DeleteRegKey64(HKEY root, const wchar_t* sub) {
+  RegDeleteKeyExW(root, sub, KEY_WOW64_64KEY, 0);
+}
+static void DeleteRegValue64(HKEY root, const wchar_t* sub,
+                             const wchar_t* val) {
+  HKEY h;
+  if (RegOpenKeyExW(root, sub, 0, KEY_SET_VALUE | KEY_WOW64_64KEY, &h)
+      == ERROR_SUCCESS) {
+    RegDeleteValueW(h, val);
+    RegCloseKey(h);
+  }
+}
+
+static void DoUninstall() {
+  PushStatus(2, "停止运行中的输入法服务 …", "停止后台进程");
+  for (const wchar_t* img : {L"WeaselServer.exe", L"WeaselDeployer.exe",
+                              L"WeaselTrayIcon.exe", L"ta-settings.exe"}) {
+    KillByName(img);
+  }
+  Sleep(800);
+
+  fs::path wdir = WeaselDir();
+  PushStatus(15, "撤销注册表项 …", "Run / Uninstall / WeaselRoot");
+  DeleteRegValue64(HKEY_LOCAL_MACHINE,
+                   L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+                   L"WeaselServer");
+  DeleteRegKey64(HKEY_LOCAL_MACHINE,
+                 L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\TypeAnything");
+  // WeaselRoot — keep until LAST so that anything reading it during
+  // uninstall still resolves correctly.
+
+  // Best-effort restore of system32\weasel.dll from its .bak (saved by
+  // an earlier install). If the file is in use it can be renamed but
+  // not overwritten, same trick the installer uses.
+  PushStatus(40, "还原系统组件 …", "system32\\weasel.dll");
+  {
+    fs::path sys32 = L"C:\\WINDOWS\\system32\\weasel.dll";
+    fs::path bak = sys32.wstring() + L".bak";
+    std::error_code ec;
+    if (fs::exists(bak)) {
+      // Rename current (locked) out, copy bak in.
+      auto stamp = std::to_string((long long)time(NULL));
+      fs::path moved = sys32.wstring() + L".uninstalled-" +
+                       std::wstring(stamp.begin(), stamp.end());
+      fs::rename(sys32, moved, ec);
+      fs::copy_file(bak, sys32, fs::copy_options::overwrite_existing, ec);
+    } else {
+      // No backup — queue delete on reboot. Don't try to delete now
+      // (TSF probably has it mapped).
+      MoveFileExW(sys32.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+    }
+  }
+
+  // Delete the install directory. Don't fail the whole uninstall on
+  // individual stuck files — log them and continue.
+  PushStatus(70, "删除安装目录 …", "files in install dir");
+  if (fs::exists(wdir)) {
+    std::error_code ec;
+    for (auto& e : fs::recursive_directory_iterator(
+             wdir, fs::directory_options::skip_permission_denied, ec)) {
+      if (e.is_regular_file(ec)) {
+        std::error_code ec2;
+        if (!fs::remove(e.path(), ec2)) {
+          MoveFileExW(e.path().c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+        }
+      }
+    }
+    fs::remove_all(wdir, ec);  // sweep remaining (incl. ourselves)
+  }
+
+  PushStatus(95, "清理注册表 …", "WeaselRoot");
+  DeleteRegKey64(HKEY_LOCAL_MACHINE, L"Software\\Rime\\Weasel");
+
+  // Self-cleanup. We're running from <wdir>\uninstall.exe — fs::remove
+  // can't delete a running .exe and MoveFileEx DELAY_UNTIL_REBOOT only
+  // wipes it after a reboot. Spawn a detached cmd.exe that waits a few
+  // seconds (for the user to close the done dialog and us to exit) then
+  // recursively removes the install dir. cmd.exe is in system32 not
+  // <wdir>, so it isn't affected by the dir going away.
+  {
+    std::wstring cmd_line =
+        L"cmd.exe /c ping -n 4 127.0.0.1 > nul & rmdir /s /q \""
+        + wdir.wstring() + L"\"";
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi{};
+    if (CreateProcessW(nullptr, cmd_line.data(),
+                       nullptr, nullptr, FALSE,
+                       CREATE_NO_WINDOW | DETACHED_PROCESS,
+                       nullptr, nullptr, &si, &pi)) {
+      CloseHandle(pi.hProcess);
+      CloseHandle(pi.hThread);
+    }
+  }
+
+  // We intentionally do NOT delete %APPDATA%\Rime — that contains the
+  // user's learned dictionary + custom config. A later reinstall picks
+  // up where they left off.
+  PushStatus(100, "卸载完成。", "%APPDATA%\\Rime 保留（用户配置）", "done", true);
 }
 
 // ─── main ──────────────────────────────────────────────────────
@@ -590,7 +900,28 @@ static std::string FileUrl(const fs::path& p) {
   return "file:///" + WideToUtf8(w);
 }
 
-int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int) {
+  // CoInitialize for IFileOpenDialog (install-dir picker).
+  ::CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+
+  // Mode: install (default) or uninstall (when invoked with /uninstall).
+  const bool uninstall_mode = lpCmdLine && wcsstr(lpCmdLine, L"/uninstall");
+  if (uninstall_mode) {
+    // Up-front confirmation. If the user backs out here we don't even
+    // bother spinning up WebView2.
+    int yn = MessageBoxW(
+        NULL,
+        L"确定要卸载 TypeAnything 输入法吗？\n\n"
+        L"会清除安装目录与系统注册项。\n"
+        L"用户字典与个人配置（%APPDATA%\\Rime）会保留。",
+        L"卸载 TypeAnything",
+        MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+    if (yn != IDYES) {
+      ::CoUninitialize();
+      return 0;
+    }
+  }
+
   // Force a writable WebView2 user data folder (Program Files is read-only).
   wchar_t lad[MAX_PATH] = {0};
   if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, lad))) {
@@ -615,24 +946,74 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   fs::path ui_html = ui_dir / L"index.html";
   {
     std::string inline_html = BuildInlineHtml();
+    // Mode flag for the UI JS — switches welcome/progress/done copy.
+    std::string mode_script =
+        std::string("<script>window.TA_MODE=\"") +
+        (uninstall_mode ? "uninstall" : "install") + "\";</script>\n";
+    // Inject right after <head> so JS sees it before app.js runs.
+    auto pos = inline_html.find("<head>");
+    if (pos != std::string::npos) {
+      inline_html.insert(pos + 6, "\n" + mode_script);
+    }
     std::ofstream f(ui_html, std::ios::binary | std::ios::trunc);
     f.write(inline_html.data(), (std::streamsize)inline_html.size());
   }
 
   webview::webview w(false, nullptr);
-  w.set_title("TypeAnything 安装");
-  w.set_size(640, 660, WEBVIEW_HINT_NONE);
-  w.set_size(560, 540, WEBVIEW_HINT_MIN);
+  w.set_title(uninstall_mode ? "TypeAnything 卸载" : "TypeAnything 安装");
+  // Fixed size — installer is a dialog, not a resizeable workspace.
+  // Also dodges WebView2 user-data window-state persistence quirks.
+  w.set_size(640, 420, WEBVIEW_HINT_FIXED);
 
   std::atomic<bool> installing{false};
+  // Default install directory shown in the picker. If a previous install
+  // wrote WeaselRoot we honor it; otherwise Program Files default.
+  std::wstring default_install_dir = WeaselDir().wstring();
 
-  // Bridge: begin install.
+  // Bridge: pick an install directory via the system folder dialog. JS
+  // calls this and receives the chosen path as a JSON string (empty on
+  // cancel).
+  w.bind("nativePickInstallDir", [&](const std::string& /*args*/) -> std::string {
+    HWND parent = (HWND)w.window();
+    std::string picked = PickInstallDir(parent, default_install_dir);
+    // Return as a JSON string literal so JS can JSON.parse the result.
+    std::string esc = JsonEscape(picked);
+    return "\"" + esc + "\"";
+  });
+
+  // Bridge: begin install. UI passes the chosen install directory (UTF-8
+  // string). API key + default target are NOT collected here — schema
+  // yaml is written with empty api_key + "English" target, and the user
+  // is guided to the model-config panel on the done screen.
   w.bind("nativeBeginInstall", [&](const std::string& args) -> std::string {
-    auto p = ParseJsonStringArray(args);
-    if (p.size() < 2) return "false";
     if (installing.exchange(true)) return "false";
-    InstallOptions opts{p[0], p[1]};
+    auto p = ParseJsonStringArray(args);
+    std::wstring dir = p.empty() ? std::wstring() : Utf8ToWide(p[0]);
+    InstallOptions opts{"", "English", dir};
     std::thread([opts]() { DoInstall(opts); }).detach();
+    return "true";
+  });
+
+  // Bridge: begin uninstall.
+  w.bind("nativeBeginUninstall", [&](const std::string& /*args*/) -> std::string {
+    if (installing.exchange(true)) return "false";
+    std::thread([]() { DoUninstall(); }).detach();
+    return "true";
+  });
+
+  // Bridge: report the default install dir so the UI can prefill.
+  w.bind("nativeDefaultInstallDir", [&](const std::string&) -> std::string {
+    return "\"" + JsonEscape(WideToUtf8(default_install_dir)) + "\"";
+  });
+
+  // Open the ta-settings.exe panel after install. Arg = "model" | "lang".
+  w.bind("nativeOpenSettings", [](const std::string& args) -> std::string {
+    auto p = ParseJsonStringArray(args);
+    std::string page = p.empty() ? std::string("model") : p[0];
+    fs::path exe = WeaselDir() / L"ta-settings.exe";
+    std::wstring wargs = std::wstring(L"--page ") + Utf8ToWide(page);
+    ShellExecuteW(nullptr, L"open", exe.c_str(), wargs.c_str(),
+                  nullptr, SW_SHOWNORMAL);
     return "true";
   });
 

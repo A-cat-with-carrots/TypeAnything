@@ -9,56 +9,56 @@
 </head>
 <body>
 
-<!-- Titlebar (OS chrome handles min/close) -->
 <header class="titlebar">
   <div class="title">
     <span class="logo" aria-hidden="true"></span>
     <span class="brand">神仙鱼<em>TypeAnything</em></span>
-    <span id="pageTitle" class="page-title">一键安装</span>
+    <span id="pageTitle" class="page-title"></span>
   </div>
 </header>
 
 <main>
 
-  <!-- Step 1: API key + default target -->
-  <section class="page" id="page-key">
-    <p class="eyebrow">SETUP · 1 / 2</p>
-    <h1>接入你的 <span class="accent">AI</span>，3 步上手。</h1>
+  <!-- Step 1: welcome -->
+  <section class="page" id="page-welcome">
+    <h1>打中文 → <span class="accent">Enter</span> → AI 改写为任意口吻</h1>
     <p class="sub">
-      TypeAnything 是 Windows 系统级输入法。打中文 → Enter → AI 改写为任意目标。
-      你的输入只发到你填的 endpoint，无中转、无后端代理。
+      装好后任意 Windows 应用按 <code>Win+Space</code> 切过来即用。
     </p>
 
-    <form class="form" id="setupForm" onsubmit="return false;">
-      <label>
-        <span>API Key</span>
-        <div class="masked">
-          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" autofocus />
-          <button type="button" class="toggle" id="toggleKey" title="显示 / 隐藏">👁</button>
-        </div>
-      </label>
-      <label>
-        <span>默认目标</span>
-        <input id="targetLang" type="text" placeholder="English" />
-      </label>
-      <p class="hint">
-        <a href="javascript:void(0)" id="getKeyLink">↗ 还没有 API key？前往 DeepSeek 注册 + 充值</a>
-      </p>
-    </form>
+    <ul class="bullets">
+      <li><strong>OS 级 TSF</strong> — 微信 / Word / Chrome / VSCode 全通</li>
+      <li><strong>BYOK</strong> — 你的 API key 直连，无中转代理</li>
+      <li><strong>装好即用</strong> — 不需重启电脑，新开应用立即生效</li>
+    </ul>
 
-    <p class="legal">
-      默认连 DeepSeek（中文质量好 + 价格低）。安装后可在托盘菜单「模型配置」改 OpenAI / Moonshot / Ollama 等任意 OpenAI Chat Completions 兼容 API。
-    </p>
+    <div class="install-dir-row">
+      <span class="install-dir-label">安装到</span>
+      <span class="install-dir-path" id="installDirPath" title=""></span>
+      <button class="btn ghost btn-tiny" id="btnPickDir">浏览…</button>
+    </div>
 
     <div class="actions">
-      <button class="btn" id="btnCancel">取消</button>
+      <button class="btn ghost" id="btnCancel">取消</button>
       <button class="btn primary" id="btnStart">开始安装</button>
+    </div>
+  </section>
+
+  <!-- Uninstall confirm page -->
+  <section class="page" id="page-uninstall-welcome" hidden>
+    <h1>卸载 TypeAnything</h1>
+    <p class="sub">
+      将清除安装目录与系统注册项。用户字典与个人配置（<code>%APPDATA%\Rime</code>）会保留，方便日后重装时延用。
+    </p>
+    <div class="actions">
+      <button class="btn ghost" id="btnUninstCancel">取消</button>
+      <button class="btn primary" id="btnUninstStart">确认卸载</button>
     </div>
   </section>
 
   <!-- Step 2: progress -->
   <section class="page" id="page-progress" hidden>
-    <p class="eyebrow">SETUP · 2 / 2</p>
+    <p class="eyebrow">INSTALLING</p>
     <h1>正在安装 …</h1>
     <p class="sub" id="progressMsg">准备文件 …</p>
 
@@ -67,19 +67,21 @@
     <ul class="log" id="log"></ul>
   </section>
 
-  <!-- Step 3: done -->
+  <!-- Step 3: done + guide to model config -->
   <section class="page" id="page-done" hidden>
-    <p class="eyebrow">DONE</p>
-    <h1>装好了。<span class="accent">直接用。</span></h1>
+    <p class="eyebrow">INSTALLED</p>
+    <h1>装好了 — <span class="accent">下一步接入 AI</span></h1>
     <p class="sub">
-      <strong>无需重启电脑</strong>。在任意 <strong>新打开</strong>的应用（记事本 / 浏览器 / 微信 / VSCode…）按 <code>Win+Space</code> 切到 <strong>TypeAnything</strong>，输入拼音 → 选词 → Enter → 即可看到 AI 风格改写。
+      填入 API key 才能跑翻译。默认 DeepSeek，也支持 OpenAI / Moonshot / Ollama 等 OpenAI 兼容 API。
     </p>
+
     <p class="legal">
-      已开着的应用持有旧 IME DLL，需重启该应用（或注销重登 / 重启电脑）才能加载新 DLL。
+      <code>Win+Space</code> 切到 TypeAnything。<strong>新打开</strong>的应用立即生效，<strong>已开</strong>的需重启该应用。
     </p>
 
     <div class="actions">
-      <button class="btn primary" id="btnClose">完成</button>
+      <button class="btn ghost" id="btnSkip">立即开始</button>
+      <button class="btn primary" id="btnOpenModel">配置模型</button>
     </div>
   </section>
 

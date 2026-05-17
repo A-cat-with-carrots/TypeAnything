@@ -25,8 +25,9 @@ IDR_TARGET_UI_CSS   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\ta
 IDR_TARGET_UI_JS    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\app.js"
 IDR_TARGET_UI_PNG   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\fish.png"
 
-// ───── Schema yaml ──────────────────────────────────────────────
+// ───── Schema yaml + supplement dict ────────────────────────────
 IDR_SCHEMA_YAML     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\typeanything.schema.yaml"
+IDR_DICT_YAML       RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\typeanything.dict.yaml"
 
 // ───── Installer's own UI ───────────────────────────────────────
 IDR_INSTALL_HTML    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\index.html"

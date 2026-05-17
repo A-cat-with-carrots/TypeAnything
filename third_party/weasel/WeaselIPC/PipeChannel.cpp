@@ -40,11 +40,24 @@ bool PipeChannelBase::_Ensure() {
 
 HANDLE PipeChannelBase::_Connect(const wchar_t* name) {
   HANDLE pipe = INVALID_HANDLE_VALUE;
-  while (_Invalid(pipe = _TryConnect()))
+  // Bounded retry. When WeaselServer is down (e.g. mid-install / redeploy)
+  // the pipe name can linger via stale client handles in other processes
+  // while no server instance is listening — _TryConnect then keeps seeing
+  // ERROR_PIPE_BUSY forever. An unbounded loop here hangs the caller
+  // indefinitely (WeaselDeployer /deploy never returns). Cap at ~10s and
+  // let the caller (_Ensure -> Client::Connect) fail gracefully instead.
+  for (int attempt = 0; attempt < 20 && _Invalid(pipe = _TryConnect());
+       ++attempt) {
     ::WaitNamedPipe(name, 500);
+  }
+  if (_Invalid(pipe)) {
+    return INVALID_HANDLE_VALUE;
+  }
   DWORD mode = PIPE_READMODE_MESSAGE;
   if (!SetNamedPipeHandleState(pipe, &mode, NULL, NULL)) {
-    _ThrowLastError;
+    DWORD err = ::GetLastError();
+    ::CloseHandle(pipe);  // don't leak the connected handle on failure
+    throw err;
   }
   return pipe;
 }
