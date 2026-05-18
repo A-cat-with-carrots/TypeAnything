@@ -148,35 +148,58 @@ Klingon battle prose / 火星文 / Spanish chilango / Cockney slang
 ### 前置条件
 
 - Windows 10 / 11
-- Weasel 0.17.4 已装：[官方下载](https://rime.im/download/)（IME 框架）
-- AI API key — 默认走 [DeepSeek](https://platform.deepseek.com/)（性价比 + 中文质量好），可换 OpenAI / Anthropic / 任意 OpenAI-compatible API
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) — Win10 20H1+ / Win11 默认已装，老版本 Win10 需手动装一次
+- AI API key — 默认走 [DeepSeek](https://platform.deepseek.com/)（性价比 + 中文质量好），可换 OpenAI / Anthropic / 任意 OpenAI-compatible API（装完后在「模型配置」面板填）
+
+> Weasel 不用先装。`ta-installer.exe` 自带 Weasel 0.17.4 全套二进制 + librime + TypeAnything 插件，一次装完。
 
 ### 一键安装（推荐）
 
-1. 下载最新 release 的 `TypeAnything-vX.Y.Z.zip`：
+1. 下载最新 release 的 `ta-installer.exe`：
    <https://github.com/A-cat-with-carrots/TypeAnything/releases/latest>
-2. 解压
-3. 双击 `Install-TypeAnything.bat` — UAC 提权 → 弹框输入 API key → 弹框输入默认目标 → 自动部署
-4. **注销重登或重启电脑** — 让所有 TSF 客户端进程加载新 weaselx64.dll
+2. 双击 `ta-installer.exe` — UAC 提权
+3. 选安装目录（默认 `C:\Program Files\Rime\weasel-0.17.4\`）→ 「开始安装」
+4. 等进度条到 100% → 「配置模型」按钮直接弹模型配置面板，填 API key 保存
 5. Win+Space 切到 **TypeAnything**
 
-### 从源码自行部署
+**装完不需要注销重登 / 重启电脑** — 新打开的应用立即生效，已开的应用需关掉重开。
+
+### 卸载
+
+控制面板 → 程序和功能 → 找到「TypeAnything」→ 卸载。或直接跑安装目录里的 `uninstall.exe`。用户字典与个人配置（`%APPDATA%\Rime`）会保留，方便日后重装时延用。
+
+### 从源码自行构建
 
 ```powershell
-# 管理员 PowerShell
+choco install -y visualstudio2022buildtools python
+# Boost 1.84 prebuilt 装到 C:\local\boost_1_84_0
+Invoke-Expression (Invoke-Webrequest 'https://xmake.io/psget.text' -UseBasicParsing).Content
+
 git clone https://github.com/A-cat-with-carrots/TypeAnything.git
-cd TypeAnything
-.\install-typeanything-to-weasel.ps1 -ApiKey "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+cd TypeAnything\third_party\weasel\librime
+git submodule update --init --recursive
+.\build.bat librime         # → dist\lib\rime.dll
+
+cd ..
+.\_build_weasel_xmake.ps1   # → Weasel binary 套件
+
+cd ..\..\tools\ta-settings
+.\_build.ps1                # → ta-settings.exe（设置面板）
+
+cd ..\ta-installer
+.\_stage_embed.ps1          # 把所有 binary 资源 stage 进 installer
+.\_build.ps1                # → ta-installer.exe（带 embedded 资源）
 ```
 
-部署脚本干这些：
-1. 优雅 `/q` 关 WeaselServer + `taskkill /F /T` + `MoveFileEx` pending-on-reboot 兜底
-2. 备份 Weasel 原版 binary 到 `*.bak`
-3. 替换 `rime.dll` / `weaselx64.dll` / `WeaselServer.exe` / `WeaselDeployer.exe` + `system32\weasel.dll`
-4. 隐藏其他 schema（让 Deployer 「方案列表」只剩 TypeAnything）
-5. 写 `typeanything.schema.yaml` + 注入 API key
-6. 改 TSF 注册表 IME 描述为 `TypeAnything`
-7. 重 deploy schema（轮询 `typeanything.prism.bin` 写入完成）+ 重启 server
+`ta-installer.exe` 内部干这些：
+1. UAC 提权（embedded manifest `requireAdministrator`）
+2. Kill 现有 Weasel 进程 + `MoveFileEx` pending-on-reboot 兜底
+3. 写 binaries 到选定安装目录（备份原版到 `*.bak`）+ 替换 `system32\weasel.dll`
+4. 写 `typeanything.schema.yaml` + `typeanything.dict.yaml` + `default.custom.yaml` + `weasel.custom.yaml` 到 `%APPDATA%\Rime\`
+5. patch TSF 注册表 IME 描述为 `TypeAnything`
+6. `WeaselDeployer.exe /deploy` 编译 schema（轮询 `typeanything.prism.bin` ≤ 60s）
+7. 启 `WeaselServer.exe` 上托盘
+8. 写 HKLM\Run 自启动 + Add/Remove Programs entry + 拷贝自身为 `uninstall.exe`
 
 ---
 
@@ -218,7 +241,7 @@ cd TypeAnything
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| **API Key** | 安装时填的 | 你自己的 API key（mask 显示，可勾「显示」眼睛按钮） |
+| **API Key** | 装完后在此填 | 你自己的 API key（mask 显示，可勾「显示」眼睛按钮）。**首次安装完进度页 → 「配置模型」按钮**直接弹此面板 |
 | **Model** | `deepseek-chat` | 模型名（`gpt-4o` / `moonshot-v1-8k` / `glm-4-flash` / `qwen2.5:7b` / 任意） |
 | **Host** | `api.deepseek.com` | 服务 host（`api.openai.com` / `api.moonshot.cn` / `open.bigmodel.cn` / `localhost:11434`） |
 | **Path** | `/v1/chat/completions` | OpenAI Chat Completions 兼容协议 |
@@ -263,12 +286,16 @@ schema 覆盖 punctuator preset，对齐 Microsoft IME 行为：
 TypeAnything/
 ├── README.md                                    本文档
 ├── LICENSE                                      MIT
-├── install-typeanything-to-weasel.ps1          源码构建路径的部署脚本
-├── Install-TypeAnything.bat                    一键安装包入口（UAC + GUI）
-├── Install-TypeAnything.ps1                    GUI 包装
 ├── fish.ico                                    神仙鱼品牌图标
 ├── tools/
-│   └── ta-settings/                            托盘菜单的 WebView2 UI ★ 新
+│   ├── ta-installer/                           ★ 单 exe 安装器（含全部资源 embed）
+│   │   ├── main.cpp                            UAC + 安装 / 卸载 worker
+│   │   ├── installer.rc                        IDR_* 资源：Weasel 套件 / ta-settings.exe / schema yaml / UI
+│   │   ├── resource.h
+│   │   ├── manifest.xml                        requireAdministrator
+│   │   ├── ui/                                 WebView2 安装向导：选目录 → 进度 → 完成
+│   │   └── _stage_embed.ps1 + _build.ps1
+│   └── ta-settings/                            ★ 托盘菜单「切换风格」+「模型配置」WebView2 面板
 │       ├── main.cpp                            webview 宿主 + JS↔C++ bridge
 │       ├── app.rc                              fish.ico embed → 窗口 / 任务栏图标
 │       ├── ui/
@@ -328,30 +355,10 @@ typeanything:
 
 ---
 
-## 从源码构建
-
-```powershell
-choco install -y visualstudio2022buildtools
-choco install -y python
-# Boost 1.84 prebuilt: 装到 C:\local\boost_1_84_0
-Invoke-Expression (Invoke-Webrequest 'https://xmake.io/psget.text' -UseBasicParsing).Content
-
-cd third_party\weasel\librime
-git submodule update --init --recursive
-.\build.bat librime         # → dist\lib\rime.dll
-
-cd ..
-.\_build_weasel_xmake.ps1   # → build\windows\x64\release\*\*.exe + .dll
-
-.\install-typeanything-to-weasel.ps1 -ApiKey "..."
-```
-
----
-
 ## 已知限制
 
 - **macOS / Linux 暂不支持** — 需用 squirrel (macOS) / fcitx-rime (Linux) 重新 fork
-- **首次安装 weaselx64.dll 真生效需注销重登或重启** — 旧 dll 被每个文本输入进程持锁；install 脚本走 `MoveFileEx` pending-on-reboot 自动兜底，重启后即生效
+- **新打开的应用立即生效，已开的应用需关掉重开** — TSF DLL 被每个文本输入进程持锁；installer 走 `MoveFileEx` pending-on-reboot 兜底，**整机重启不需要**
 - **WebView2 runtime 依赖** — 设置面板用 Edge WebView2。Win10 20H1+ / Win11 默认装；老 Win10 (1909/1903) 需手动装一次
 - **切换风格只影响下次 Enter** — processor 在 Enter 触发时才重读 `typeanything_lang.txt`，已落地的文本不回译
 - **首次启动 schema 编译 ~3-5s** — librime 首次编译 `luna_pinyin.table.bin` (13MB)，仅一次性
