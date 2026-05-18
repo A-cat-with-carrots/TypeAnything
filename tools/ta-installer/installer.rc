@@ -34,3 +34,12 @@ IDR_INSTALL_HTML    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\in
 IDR_INSTALL_CSS     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\style.css"
 IDR_INSTALL_JS      RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\app.js"
 IDR_INSTALL_PNG     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\fish.png"
+
+// ───── Rime base data (for cold-install) ────────────────────────
+IDR_DATA_DEFAULT       RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\default.yaml"
+IDR_DATA_LUNA_DICT     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\luna_pinyin.dict.yaml"
+IDR_DATA_LUNA_SCHEMA   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\luna_pinyin.schema.yaml"
+IDR_DATA_ESSAY         RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\essay.txt"
+IDR_DATA_SYMBOLS       RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\symbols.yaml"
+IDR_DATA_PUNCTUATION   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\punctuation.yaml"
+IDR_DATA_KEY_BINDINGS  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\key_bindings.yaml"

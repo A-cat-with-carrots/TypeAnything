@@ -257,6 +257,45 @@ main.pure-locked .page {
 }
 .x:hover { background: rgba(220, 60, 60, 0.55); color: var(--ink); }
 
+/* ─── Page tabs ──────────────────────────────────────────────────── */
+.page-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-deep);
+  position: relative;
+  z-index: 1;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.page-tab {
+  height: 38px;
+  padding: 0 18px;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s;
+}
+.page-tab:hover { color: var(--ink); }
+.page-tab.active {
+  color: var(--accent);
+}
+.page-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 18px; right: 18px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
 /* ─── Main ──────────────────────────────────────────────────────── */
 main {
   position: relative;

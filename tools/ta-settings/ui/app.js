@@ -28,12 +28,23 @@ function showPage(name) {
   document.querySelectorAll(".page").forEach(el => el.hidden = true);
   const el = document.getElementById("page-" + name);
   if (el) el.hidden = false;
-  document.getElementById("pageTitle").textContent =
-    name === "model" ? "模型配置" : "切换风格";
+  // Tab visual state.
+  document.querySelectorAll(".page-tab").forEach(b => {
+    b.classList.toggle("active", b.dataset.page === name);
+  });
   // 纯净模式 toggle belongs to the language switcher only — hide on
   // the model-config page.
   const tw = document.getElementById("pureToggleWrap");
   if (tw) tw.hidden = (name !== "lang");
+}
+
+// Initialize model page lazily — only when user clicks the tab the first time,
+// to avoid two nativeRead* calls at startup.
+let _modelInited = false;
+async function ensureModelInit() {
+  if (_modelInited) return;
+  _modelInited = true;
+  try { await initModelPage(); } catch (e) { /* surface via toast inside */ }
 }
 
 function toast(msg, kind = "ok") {
@@ -248,11 +259,20 @@ async function initModelPage() {
 }
 
 // ─── Bootstrap ────────────────────────────────────────────────────
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
+  // Always init both pages so user can swap freely. Lang init is cheap;
+  // model init makes one nativeReadSchema call.
+  await initLangPage();
+  await initModelPage();
+  _modelInited = true;
+
+  // Tab nav.
+  document.querySelectorAll(".page-tab").forEach(b => {
+    b.addEventListener("click", () => showPage(b.dataset.page));
+  });
+
   const page = activePage();
   showPage(page);
-  if (page === "model") initModelPage();
-  else                  initLangPage();
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") window.nativeClose();

@@ -36,6 +36,27 @@ Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\sc
 Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.dict.yaml" `
           "$embed\typeanything.dict.yaml"
 
+# 6. Rime base data — required on cold machines (no prior Weasel install).
+#    Prefer the installed Weasel data dir (has key_bindings/punctuation that
+#    librime/data/minimal/ lacks). Fall back to minimal/ for files missing.
+$pfData = "C:\Program Files\Rime\weasel-0.17.4\data"
+$minData = "D:\hrdai\aiForType\third_party\weasel\librime\data\minimal"
+function StageDataFile($name) {
+    $pf  = Join-Path $pfData $name
+    $min = Join-Path $minData $name
+    $dst = Join-Path $embed $name
+    if (Test-Path $pf)        { Copy-Item $pf  $dst }
+    elseif (Test-Path $min)   { Copy-Item $min $dst }
+    else                      { throw "data file not found: $name" }
+}
+StageDataFile "default.yaml"
+StageDataFile "luna_pinyin.dict.yaml"
+StageDataFile "luna_pinyin.schema.yaml"
+StageDataFile "essay.txt"
+StageDataFile "symbols.yaml"
+StageDataFile "punctuation.yaml"
+StageDataFile "key_bindings.yaml"
+
 # Compile installer.rc → .res → .obj (real COFF) so xmake link picks it up
 # as a normal object file. xmake's built-in RC handling outputs RES format
 # but under a .obj name, which link.exe silently drops.

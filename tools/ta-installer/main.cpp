@@ -20,12 +20,14 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #include <shobjidl.h>   // IFileOpenDialog (folder picker)
+#include <shlguid.h>    // CLSID_ShellLink, IID_IShellLinkW
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
+#pragma comment(lib, "uuid.lib")
 
 #include <atomic>
 #include <chrono>
@@ -425,14 +427,87 @@ static void StartHidden(const fs::path& exe, const std::wstring& args = L"") {
   }
 }
 
-static void StartShown(const fs::path& exe) {
+static bool StartShown(const fs::path& exe) {
   std::wstring cmd = L"\"" + exe.wstring() + L"\"";
   STARTUPINFOW si{}; si.cb = sizeof(si);
   PROCESS_INFORMATION pi{};
   if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE,
                      0, nullptr, nullptr, &si, &pi)) {
     CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    return true;
   }
+  return false;
+}
+
+// ─── Cold-register TSF DLL ──────────────────────────────────────
+//
+// Standard Weasel MSI runs `regsvr32 weaselx64.dll` post-extract to register
+// the TSF Text Service. On cold machines (never had Weasel/Rime) the
+// HKLM\SOFTWARE\Microsoft\CTF\TIP\{A3F4CDED-…} CLSID subtree doesn't exist,
+// and Win+Space won't show TypeAnything until we register it.
+//
+// DllRegisterServer is idempotent — calling on already-registered system
+// just rewrites the same HKCR / HKLM entries.
+
+static bool ColdRegisterTsfDll(const fs::path& dll_path) {
+  HMODULE h = LoadLibraryExW(dll_path.c_str(), nullptr,
+                              LOAD_WITH_ALTERED_SEARCH_PATH);
+  if (!h) return false;
+  using RegFn = HRESULT (WINAPI*)();
+  auto fn = (RegFn)GetProcAddress(h, "DllRegisterServer");
+  bool ok = false;
+  if (fn) ok = SUCCEEDED(fn());
+  FreeLibrary(h);
+  return ok;
+}
+
+static void ColdUnregisterTsfDll(const fs::path& dll_path) {
+  HMODULE h = LoadLibraryExW(dll_path.c_str(), nullptr,
+                              LOAD_WITH_ALTERED_SEARCH_PATH);
+  if (!h) return;
+  using UnregFn = HRESULT (WINAPI*)();
+  auto fn = (UnregFn)GetProcAddress(h, "DllUnregisterServer");
+  if (fn) fn();
+  FreeLibrary(h);
+}
+
+// ─── Start Menu shortcut ────────────────────────────────────────
+//
+// `Win+Space → TypeAnything` works once TSF is registered, but if the
+// WeaselServer backend isn't running (no tray icon → no menu), the user
+// has no entry point. A Start Menu .lnk → WeaselServer.exe gives them a
+// one-click "start the IME backend" with zero UI side-effects.
+
+static fs::path StartMenuProgramsAllUsers() {
+  PWSTR p = nullptr; std::wstring root;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_CommonPrograms, 0, NULL, &p))) {
+    root = p; CoTaskMemFree(p);
+  }
+  return fs::path(root);
+}
+
+static bool CreateLnk(const fs::path& target_exe,
+                      const fs::path& lnk_path,
+                      const std::wstring& description) {
+  IShellLinkW* psl = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&psl));
+  if (FAILED(hr) || !psl) return false;
+  psl->SetPath(target_exe.c_str());
+  psl->SetDescription(description.c_str());
+  psl->SetWorkingDirectory(target_exe.parent_path().c_str());
+  psl->SetIconLocation(target_exe.c_str(), 0);
+
+  IPersistFile* ppf = nullptr;
+  bool ok = false;
+  if (SUCCEEDED(psl->QueryInterface(IID_PPV_ARGS(&ppf))) && ppf) {
+    std::error_code ec;
+    fs::create_directories(lnk_path.parent_path(), ec);
+    ok = SUCCEEDED(ppf->Save(lnk_path.c_str(), TRUE));
+    ppf->Release();
+  }
+  psl->Release();
+  return ok;
 }
 
 // ─── TSF profile description patch ──────────────────────────────
@@ -557,13 +632,19 @@ static void DoInstall(InstallOptions opts) {
   }
 
   // 3. Replace system32\weasel.dll (TSF reads its IconFile from this copy).
+  //    Soft fail: install can still work without this; sys32 dll is only
+  //    used for the IME's tray icon resource path.
   fs::path sys32_dll = L"C:\\WINDOWS\\system32\\weasel.dll";
   fs::path sys32_bak = sys32_dll.wstring() + L".bak";
   if (fs::exists(sys32_dll) && !fs::exists(sys32_bak)) {
     std::error_code ec; fs::copy_file(sys32_dll, sys32_bak, ec);
   }
   PushStatus(64, "替换系统组件 …", "替换系统 DLL");
-  WriteEmbeddedToLockableFile(MAKEINTRESOURCEW(IDR_WEASELX64_DLL), sys32_dll, &reboot_needed);
+  if (!WriteEmbeddedToLockableFile(MAKEINTRESOURCEW(IDR_WEASELX64_DLL),
+                                   sys32_dll, &reboot_needed)) {
+    PushStatus(64, "system32\\weasel.dll 替换失败（不影响主功能）",
+               "system32 DLL 写失败（warning）", "warning");
+  }
 
   // 4. ta-settings ui directory.
   fs::path ui = wdir / L"ui";
@@ -676,11 +757,62 @@ static void DoInstall(InstallOptions opts) {
     lf << (opts.target_lang.empty() ? "English" : opts.target_lang);
   }
 
-  // 6. Patch HKLM TSF profile descriptions.
-  PushStatus(84, "注册输入法描述 …", "TSF 描述改写为 TypeAnything");
+  // 6. Deploy Rime base data (luna_pinyin + presets) to <wdir>\data\.
+  //    Required for cold machines (never had Weasel/Rime). Skip files
+  //    that already exist — preserves user-trained luna_pinyin user_dict
+  //    on upgrade installs.
+  PushStatus(82, "释放拼音字典与预设 …", "Rime 数据文件");
+  {
+    fs::path data = wdir / L"data";
+    std::error_code ec; fs::create_directories(data, ec);
+    struct DataFile { LPCWSTR res; const wchar_t* name; };
+    std::vector<DataFile> data_files = {
+      {MAKEINTRESOURCEW(IDR_DATA_DEFAULT),       L"default.yaml"},
+      {MAKEINTRESOURCEW(IDR_DATA_LUNA_DICT),     L"luna_pinyin.dict.yaml"},
+      {MAKEINTRESOURCEW(IDR_DATA_LUNA_SCHEMA),   L"luna_pinyin.schema.yaml"},
+      {MAKEINTRESOURCEW(IDR_DATA_ESSAY),         L"essay.txt"},
+      {MAKEINTRESOURCEW(IDR_DATA_SYMBOLS),       L"symbols.yaml"},
+      {MAKEINTRESOURCEW(IDR_DATA_PUNCTUATION),   L"punctuation.yaml"},
+      {MAKEINTRESOURCEW(IDR_DATA_KEY_BINDINGS),  L"key_bindings.yaml"},
+    };
+    int missing = 0;
+    for (auto& d : data_files) {
+      fs::path dst = data / d.name;
+      if (fs::exists(dst)) continue;   // preserve existing
+      if (!WriteEmbeddedToFile(d.res, dst)) {
+        ++missing;
+        PushStatus(82, std::string("数据文件写失败：") + WideToUtf8(d.name),
+                   std::string("写失败：") + WideToUtf8(d.name), "warning");
+      }
+    }
+    if (missing > 0 && !fs::exists(data / L"luna_pinyin.dict.yaml")) {
+      // luna_pinyin missing = schema cannot compile.
+      PushStatus(82, "拼音字典未就绪，无法继续",
+                 "luna_pinyin.dict.yaml 缺失", "error", false,
+                 "Rime 字典文件无法部署（杀软拦截？磁盘只读？）");
+      return;
+    }
+  }
+
+  // 7. Cold-register weaselx64.dll as a TSF text service.
+  //    Standard Weasel MSI does this via regsvr32 — ta-installer must do
+  //    it itself for cold machines, otherwise Win+Space won't show
+  //    TypeAnything. Idempotent on already-registered systems.
+  PushStatus(84, "注册到 Windows 输入法框架 …", "TSF 注册 (DllRegisterServer)");
+  if (!ColdRegisterTsfDll(wdir / L"weaselx64.dll")) {
+    PushStatus(84, "TSF 注册失败 — 检查 weaselx64.dll 是否被杀软拦截",
+               "DllRegisterServer 失败", "error", false,
+               "无法把 TypeAnything 注册到 Windows 输入法框架。"
+               "通常是杀软 / EDR / GPO 拦截，或 weaselx64.dll 文件被改坏。");
+    return;
+  }
+
+  // 8. Patch HKLM TSF profile descriptions (now that the TIP CLSID
+  //    subtree exists from step 7 above).
+  PushStatus(86, "改写输入法显示名称 …", "TSF 描述改写为 TypeAnything");
   PatchTsfProfileDescriptions();
 
-  // 7. Drop other schemas from Weasel data dir.
+  // 9. Drop other schemas from Weasel data dir (keep luna_pinyin + typeanything).
   PushStatus(88, "仅保留 TypeAnything 方案 …", "隐藏其他 Rime 方案");
   {
     fs::path data = wdir / L"data";
@@ -691,11 +823,14 @@ static void DoInstall(InstallOptions opts) {
     if (fs::exists(data)) {
       for (auto& e : fs::directory_iterator(data)) {
         auto name = e.path().filename().wstring();
-        if (name.size() > 12 && name.substr(name.size() - 12) == L".schema.yaml") {
+        if (name.size() > 12 && name.substr(name.size() - 12) == L".schema.yaml"
+            && name.compare(0, 11, L"luna_pinyin") != 0
+            && name.compare(0, 12, L"typeanything") != 0) {
           std::error_code ec; fs::remove(e.path(), ec);
         }
         if (name.size() > 10 && name.substr(name.size() - 10) == L".dict.yaml"
-            && name.compare(0, 11, L"luna_pinyin") != 0) {
+            && name.compare(0, 11, L"luna_pinyin") != 0
+            && name.compare(0, 12, L"typeanything") != 0) {
           std::error_code ec; fs::remove(e.path(), ec);
         }
       }
@@ -728,12 +863,19 @@ static void DoInstall(InstallOptions opts) {
     PushStatus(95, "方案编译完成", "方案编译完成", "done");
   }
 
-  // 9. Start WeaselServer so the tray icon comes up.
-  PushStatus(98, "启动输入法服务 …", "输入法服务上线");
-  StartShown(wdir / L"WeaselServer.exe");
+  // 10. Start WeaselServer so the tray icon comes up. Fatal if it
+  //     doesn't start — without server there's no tray menu, no IPC
+  //     backend for the TSF DLL.
+  PushStatus(96, "启动输入法服务 …", "输入法服务上线");
+  if (!StartShown(wdir / L"WeaselServer.exe")) {
+    PushStatus(96, "WeaselServer.exe 启动失败",
+               "无法启动 WeaselServer.exe", "error", false,
+               "WeaselServer.exe 启动失败（杀软拦截 / 缺少 VC++ 运行时 / "
+               "rime.dll 加载失败）。");
+    return;
+  }
 
-  // 10. Register autostart (HKLM\Run already done by upstream MSI usually,
-  //     but in case it's missing we add it now).
+  // 11. Register autostart on next login.
   {
     HKEY h;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
@@ -747,10 +889,7 @@ static void DoInstall(InstallOptions opts) {
     }
   }
 
-  // 11. Drop a copy of ourselves as `uninstall.exe` next to the binaries
-  //     and register an Add/Remove Programs entry. The uninstaller is the
-  //     same EXE re-invoked with /uninstall — so it always matches the
-  //     installed version's layout.
+  // 12. Drop a copy of ourselves as `uninstall.exe` + Add/Remove Programs entry.
   {
     wchar_t self[MAX_PATH] = {0};
     GetModuleFileNameW(NULL, self, _countof(self));
@@ -758,7 +897,20 @@ static void DoInstall(InstallOptions opts) {
     std::error_code ec;
     fs::copy_file(fs::path(self), uninst,
                   fs::copy_options::overwrite_existing, ec);
-    WriteUninstallRegistry(wdir, L"0.6.2");
+    WriteUninstallRegistry(wdir, L"0.6.3");
+  }
+
+  // 13. Start Menu shortcut → WeaselServer.exe. User-facing "start the
+  //     input method" entry. Lives in the all-users Start Menu so it
+  //     shows up for every account on the machine.
+  PushStatus(98, "创建开始菜单快捷方式 …", "开始菜单 → TypeAnything");
+  {
+    fs::path lnk = StartMenuProgramsAllUsers() / L"TypeAnything.lnk";
+    if (!CreateLnk(wdir / L"WeaselServer.exe", lnk,
+                   L"启动 TypeAnything 输入法")) {
+      PushStatus(98, "开始菜单快捷方式创建失败（不影响主功能）",
+                 "Start Menu lnk 失败（warning）", "warning");
+    }
   }
 
   std::string final_msg = reboot_needed
@@ -801,6 +953,18 @@ static void DoUninstall() {
   Sleep(800);
 
   fs::path wdir = WeaselDir();
+
+  // Unregister TSF (DllUnregisterServer) while weaselx64.dll is still on
+  // disk. Removes the HKLM CTF\TIP CLSID subtree the installer created.
+  PushStatus(8, "从输入法框架注销 …", "TSF 注销 (DllUnregisterServer)");
+  ColdUnregisterTsfDll(wdir / L"weaselx64.dll");
+
+  // Remove Start Menu shortcut.
+  {
+    fs::path lnk = StartMenuProgramsAllUsers() / L"TypeAnything.lnk";
+    std::error_code ec; fs::remove(lnk, ec);
+  }
+
   PushStatus(15, "撤销注册表项 …", "Run / Uninstall / WeaselRoot");
   DeleteRegValue64(HKEY_LOCAL_MACHINE,
                    L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
