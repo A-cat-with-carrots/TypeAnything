@@ -498,26 +498,70 @@ static bool StartDeElevated(const fs::path& exe_path) {
 // DllRegisterServer is idempotent — calling on already-registered system
 // just rewrites the same HKCR / HKLM entries.
 
-static bool ColdRegisterTsfDll(const fs::path& dll_path) {
+// Returns a diagnostic string (empty on success). DllRegisterServer needs
+// COM initialized on the calling thread; the worker thread that runs
+// DoInstall doesn't inherit COM from main, so init here.
+static std::string ColdRegisterTsfDllDiag(const fs::path& dll_path,
+                                          bool* ok_out) {
+  *ok_out = false;
+  CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   HMODULE h = LoadLibraryExW(dll_path.c_str(), nullptr,
                               LOAD_WITH_ALTERED_SEARCH_PATH);
-  if (!h) return false;
+  if (!h) {
+    DWORD err = GetLastError();
+    CoUninitialize();
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "LoadLibraryEx failed (GetLastError=%lu)", err);
+    return buf;
+  }
   using RegFn = HRESULT (WINAPI*)();
   auto fn = (RegFn)GetProcAddress(h, "DllRegisterServer");
-  bool ok = false;
-  if (fn) ok = SUCCEEDED(fn());
+  if (!fn) {
+    FreeLibrary(h);
+    CoUninitialize();
+    return "DllRegisterServer entry point missing in weaselx64.dll";
+  }
+  HRESULT hr = fn();
   FreeLibrary(h);
-  return ok;
+  CoUninitialize();
+  if (FAILED(hr)) {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "DllRegisterServer returned HRESULT=0x%08lX",
+             (unsigned long)hr);
+    return buf;
+  }
+  *ok_out = true;
+  return "";
 }
 
 static void ColdUnregisterTsfDll(const fs::path& dll_path) {
+  CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   HMODULE h = LoadLibraryExW(dll_path.c_str(), nullptr,
                               LOAD_WITH_ALTERED_SEARCH_PATH);
-  if (!h) return;
-  using UnregFn = HRESULT (WINAPI*)();
-  auto fn = (UnregFn)GetProcAddress(h, "DllUnregisterServer");
-  if (fn) fn();
-  FreeLibrary(h);
+  if (h) {
+    using UnregFn = HRESULT (WINAPI*)();
+    auto fn = (UnregFn)GetProcAddress(h, "DllUnregisterServer");
+    if (fn) fn();
+    FreeLibrary(h);
+  }
+  CoUninitialize();
+}
+
+// Cheap check: does HKLM\SOFTWARE\Microsoft\CTF\TIP\<weasel-clsid> exist?
+// If yes, a prior Weasel install already registered the TSF profile and
+// DllRegisterServer failure is non-fatal — the IME still works.
+static bool TsfAlreadyRegistered() {
+  HKEY h;
+  if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                    L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
+                    L"{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}",
+                    0, KEY_READ | KEY_WOW64_64KEY, &h) == ERROR_SUCCESS) {
+    RegCloseKey(h);
+    return true;
+  }
+  return false;
 }
 
 // ─── Start Menu shortcut ────────────────────────────────────────
@@ -852,15 +896,32 @@ static void DoInstall(InstallOptions opts) {
 
   // 7. Cold-register weaselx64.dll as a TSF text service.
   //    Standard Weasel MSI does this via regsvr32 — ta-installer must do
-  //    it itself for cold machines, otherwise Win+Space won't show
+  //    it itself on cold machines, otherwise Win+Space won't show
   //    TypeAnything. Idempotent on already-registered systems.
+  //
+  //    Failure is fatal ONLY when the TIP CLSID subtree is also missing.
+  //    On upgrade installs (prior Weasel/Rime registered the CLSID
+  //    already), a DllRegisterServer failure is downgraded to a warning
+  //    — the IME still works via the existing subtree.
   PushStatus(84, "注册到 Windows 输入法框架 …", "TSF 注册 (DllRegisterServer)");
-  if (!ColdRegisterTsfDll(wdir / L"weaselx64.dll")) {
-    PushStatus(84, "TSF 注册失败 — 检查 weaselx64.dll 是否被杀软拦截",
-               "DllRegisterServer 失败", "error", false,
-               "无法把 TypeAnything 注册到 Windows 输入法框架。"
-               "通常是杀软 / EDR / GPO 拦截，或 weaselx64.dll 文件被改坏。");
-    return;
+  {
+    bool reg_ok = false;
+    std::string diag =
+        ColdRegisterTsfDllDiag(wdir / L"weaselx64.dll", &reg_ok);
+    if (!reg_ok) {
+      if (TsfAlreadyRegistered()) {
+        PushStatus(84,
+                   "TSF 已注册（跳过 cold-register；warning：" + diag + "）",
+                   "TSF cold-register skipped: " + diag, "warning");
+      } else {
+        std::string msg =
+            "无法把 TypeAnything 注册到 Windows 输入法框架（" + diag +
+            "）。通常是杀软 / EDR / GPO 拦截，或 weaselx64.dll 缺依赖。";
+        PushStatus(84, msg, "DllRegisterServer 失败: " + diag,
+                   "error", false, msg);
+        return;
+      }
+    }
   }
 
   // 8. Patch HKLM TSF profile descriptions (now that the TIP CLSID
