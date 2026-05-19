@@ -36,6 +36,18 @@
 
 namespace fs = std::filesystem;
 
+// ─── Single-instance / cross-process IPC ─────────────────────────
+// When the user clicks a tray menu while ta-settings is already open we want
+// to (1) NOT spawn a second window and (2) raise the existing one + switch
+// the visible page. Implementation: named mutex for single-instance check, a
+// named file mapping to share the HWND across processes, and a custom
+// WM_APP+1 message PostMessage'd from the secondary instance.
+
+static const wchar_t* TA_MUTEX_NAME = L"Local\\TypeAnything-ta-settings-singleton-v1";
+static const wchar_t* TA_HWND_MAP_NAME = L"Local\\TypeAnything-ta-settings-hwnd-v1";
+// wparam: 0 = lang, 1 = model
+static const UINT WM_TA_SHOWPAGE = WM_APP + 1;
+
 // ───────────────────────── helpers ──────────────────────────
 
 static std::wstring Utf8ToWide(const std::string& s) {
@@ -390,8 +402,66 @@ static void ApplyMica(HWND hwnd) {
 
 // ───────────────────────── main ──────────────────────────────
 
+// Subclass state (only one ta-settings window per process; module-level OK).
+static WNDPROC g_original_wndproc = nullptr;
+static webview::webview* g_webview = nullptr;
+
+static LRESULT CALLBACK TaSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+  if (msg == WM_TA_SHOWPAGE) {
+    const char* pg = (wp == 1) ? "model" : "lang";
+    if (g_webview) {
+      // Run on the UI thread via webview::dispatch — eval + foreground
+      // must touch the webview / HWND from the message-pump thread.
+      g_webview->dispatch([pg, hwnd]() {
+        if (g_webview) {
+          std::string js =
+              "if (typeof showPage === 'function') showPage('";
+          js += pg;
+          js += "');";
+          g_webview->eval(js);
+        }
+        if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+        else                ShowWindow(hwnd, SW_SHOWNORMAL);
+        SetForegroundWindow(hwnd);
+        BringWindowToTop(hwnd);
+      });
+    }
+    return 0;
+  }
+  return CallWindowProcW(g_original_wndproc, hwnd, msg, wp, lp);
+}
+
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   std::string page = GetPageArg();
+
+  // Single-instance check. If another ta-settings is already running,
+  // post it a WM_TA_SHOWPAGE with the requested page and exit. The
+  // existing window will switch tabs + raise itself.
+  HANDLE hMutex = CreateMutexW(nullptr, FALSE, TA_MUTEX_NAME);
+  DWORD mutex_err = GetLastError();
+  if (mutex_err == ERROR_ALREADY_EXISTS) {
+    HANDLE hMapR = OpenFileMappingW(FILE_MAP_READ, FALSE, TA_HWND_MAP_NAME);
+    HWND existing = nullptr;
+    if (hMapR) {
+      HWND* p = (HWND*)MapViewOfFile(hMapR, FILE_MAP_READ, 0, 0, sizeof(HWND));
+      if (p) { existing = *p; UnmapViewOfFile(p); }
+      CloseHandle(hMapR);
+    }
+    if (existing && IsWindow(existing)) {
+      DWORD owner_pid = 0;
+      GetWindowThreadProcessId(existing, &owner_pid);
+      if (owner_pid) AllowSetForegroundWindow(owner_pid);
+      WPARAM page_id = (page == "model") ? 1 : 0;
+      PostMessageW(existing, WM_TA_SHOWPAGE, page_id, 0);
+      if (hMutex) CloseHandle(hMutex);
+      return 0;
+    }
+    // Stale mutex (previous process crashed): fall through and own it
+    // ourselves on the next CreateMutex iteration. The mutex is now
+    // un-named-but-orphaned; close + re-create to claim ownership.
+    if (hMutex) CloseHandle(hMutex);
+    hMutex = CreateMutexW(nullptr, TRUE, TA_MUTEX_NAME);
+  }
 
   // WebView2 needs a writable user-data folder. Its default is alongside
   // the exe, which is C:\Program Files\Rime\weasel-0.17.4 (read-only).
@@ -415,13 +485,13 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // display with 100% scaling.
     // Trimmed: was 620, dropped two rows after removing the get-key link
     // and the install-prompt subtitle in the model form.
-    w.set_size(660, 640, WEBVIEW_HINT_NONE);
-    w.set_size(560, 520, WEBVIEW_HINT_MIN);
+    w.set_size(660, 680, WEBVIEW_HINT_NONE);
+    w.set_size(560, 540, WEBVIEW_HINT_MIN);
   } else {
     // Language picker is intentionally scrollable; pick a comfortable
     // initial height that shows 2-3 chip categories.
-    w.set_size(700, 760, WEBVIEW_HINT_NONE);
-    w.set_size(560, 540, WEBVIEW_HINT_MIN);
+    w.set_size(700, 800, WEBVIEW_HINT_NONE);
+    w.set_size(560, 580, WEBVIEW_HINT_MIN);
   }
 
   // ─── Native bridge ────────────────────────────────────────
@@ -501,6 +571,21 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   // ─── Window setup + Mica ──────────────────────────────────
   HWND hwnd = (HWND)w.window();
   ApplyMica(hwnd);
+
+  // Single-instance: publish our HWND in a named file mapping so a
+  // secondary launch can find us and PostMessage. Install a subclass on
+  // the webview's HWND to handle WM_TA_SHOWPAGE.
+  HANDLE hMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr,
+                                    PAGE_READWRITE, 0, sizeof(HWND),
+                                    TA_HWND_MAP_NAME);
+  if (hMap) {
+    HWND* p = (HWND*)MapViewOfFile(hMap, FILE_MAP_WRITE, 0, 0, sizeof(HWND));
+    if (p) { *p = hwnd; UnmapViewOfFile(p); }
+    // Intentionally leak hMap — kernel object stays alive until process exit.
+  }
+  g_webview = &w;
+  g_original_wndproc = (WNDPROC)SetWindowLongPtrW(
+      hwnd, GWLP_WNDPROC, (LONG_PTR)TaSubclassProc);
 
   // ─── Load the UI HTML ─────────────────────────────────────
   fs::path index = ExeDir() / "ui" / "index.html";

@@ -439,6 +439,55 @@ static bool StartShown(const fs::path& exe) {
   return false;
 }
 
+// Start `exe` at MEDIUM integrity level by inheriting the desktop shell's
+// (explorer.exe) primary token. Required so WeaselServer's named pipe ACL
+// matches the IL of typical text-input applications (Notepad / 微信 / Chrome /
+// Word — all MEDIUM IL). Without de-elevation, MEDIUM client apps' IPC to
+// WeaselServer would be ACCESS_DENIED → IME wouldn't show candidates.
+//
+// Returns false when explorer.exe isn't running (UAC=0 / pre-login) or when
+// the elevated installer lacks SE_IMPERSONATE_NAME (rare). Caller should
+// fall back to a normal CreateProcessW.
+
+static bool StartDeElevated(const fs::path& exe_path) {
+  HWND hShell = GetShellWindow();
+  if (!hShell) return false;
+
+  DWORD shell_pid = 0;
+  GetWindowThreadProcessId(hShell, &shell_pid);
+  if (!shell_pid) return false;
+
+  HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, shell_pid);
+  if (!hProc) return false;
+
+  HANDLE hShellTok = nullptr;
+  BOOL ok = OpenProcessToken(hProc, TOKEN_DUPLICATE, &hShellTok);
+  CloseHandle(hProc);
+  if (!ok || !hShellTok) return false;
+
+  HANDLE hPriToken = nullptr;
+  ok = DuplicateTokenEx(
+      hShellTok,
+      TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE |
+          TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID,
+      nullptr, SecurityImpersonation, TokenPrimary, &hPriToken);
+  CloseHandle(hShellTok);
+  if (!ok || !hPriToken) return false;
+
+  STARTUPINFOW si{}; si.cb = sizeof(si);
+  PROCESS_INFORMATION pi{};
+  std::wstring cmd = L"\"" + exe_path.wstring() + L"\"";
+
+  ok = CreateProcessWithTokenW(hPriToken, 0, nullptr, cmd.data(),
+                                CREATE_NEW_PROCESS_GROUP, nullptr,
+                                nullptr, &si, &pi);
+  CloseHandle(hPriToken);
+  if (!ok) return false;
+
+  CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+  return true;
+}
+
 // ─── Cold-register TSF DLL ──────────────────────────────────────
 //
 // Standard Weasel MSI runs `regsvr32 weaselx64.dll` post-extract to register
@@ -866,8 +915,18 @@ static void DoInstall(InstallOptions opts) {
   // 10. Start WeaselServer so the tray icon comes up. Fatal if it
   //     doesn't start — without server there's no tray menu, no IPC
   //     backend for the TSF DLL.
+  //
+  //     Try de-elevation first (CreateProcessWithTokenW with explorer's
+  //     token → MEDIUM IL). Required so the server's named pipe ACL
+  //     matches typical MEDIUM IL text-input apps. Fall back to plain
+  //     elevated CreateProcessW only if de-elevation is unavailable
+  //     (UAC=0 / no shell window / SE_IMPERSONATE_NAME missing).
   PushStatus(96, "启动输入法服务 …", "输入法服务上线");
-  if (!StartShown(wdir / L"WeaselServer.exe")) {
+  bool server_started = StartDeElevated(wdir / L"WeaselServer.exe");
+  if (!server_started) {
+    server_started = StartShown(wdir / L"WeaselServer.exe");
+  }
+  if (!server_started) {
     PushStatus(96, "WeaselServer.exe 启动失败",
                "无法启动 WeaselServer.exe", "error", false,
                "WeaselServer.exe 启动失败（杀软拦截 / 缺少 VC++ 运行时 / "

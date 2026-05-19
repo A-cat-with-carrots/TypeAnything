@@ -132,11 +132,15 @@ body::before {
 .pure-toggle-slider { display: none; }
 .pure-toggle[hidden] { display: none !important; }
 
-/* When pure mode is on, lock the body of the panel. */
+/* When pure mode is on, lock the body of the panel.
+   `!important` + `animation: none` override the .page fade-in (which
+   would otherwise drive opacity 0→1 over 0.22s and flash the locked
+   state every time the user switches tabs). */
 main.pure-locked .page {
-  opacity: 0.4;
+  opacity: 0.4 !important;
   pointer-events: none;
   filter: saturate(0.4);
+  animation: none !important;
 }
 
 /* ── Model-config form grid (2-column for short fields) ────────── */

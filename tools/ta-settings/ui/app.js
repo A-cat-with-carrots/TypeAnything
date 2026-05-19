@@ -32,10 +32,6 @@ function showPage(name) {
   document.querySelectorAll(".page-tab").forEach(b => {
     b.classList.toggle("active", b.dataset.page === name);
   });
-  // 纯净模式 toggle belongs to the language switcher only — hide on
-  // the model-config page.
-  const tw = document.getElementById("pureToggleWrap");
-  if (tw) tw.hidden = (name !== "lang");
 }
 
 // Initialize model page lazily — only when user clicks the tab the first time,
@@ -93,10 +89,12 @@ async function initLangPage() {
     if (mainEl) {
       mainEl.classList.toggle("pure-locked", !!on);
     }
-    // Disable form controls inside the page so keyboard tabbing also
-    // can't reach them while locked.
-    document.querySelectorAll("#page-lang input, #page-lang button.chip, #page-lang .btn.primary")
-      .forEach(el => { el.disabled = !!on; });
+    // Disable form controls in BOTH pages (lang chips/save + model
+    // form/preset/save) so keyboard tabbing can't reach them either.
+    document.querySelectorAll(
+      "#page-lang input, #page-lang button.chip, #page-lang .btn.primary, " +
+      "#page-model input, #page-model button"
+    ).forEach(el => { el.disabled = !!on; });
   }
   if (pureToggle) {
     // Initial state: reflect current lang file.
