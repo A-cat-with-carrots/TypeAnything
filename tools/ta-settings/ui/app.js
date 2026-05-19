@@ -12,10 +12,11 @@
 
 const PROVIDER_PRESETS = {
   deepseek: { model: "deepseek-chat",    host: "api.deepseek.com",  path: "/v1/chat/completions" },
-  openai:   { model: "gpt-4o",           host: "api.openai.com",    path: "/v1/chat/completions" },
   moonshot: { model: "moonshot-v1-8k",   host: "api.moonshot.cn",   path: "/v1/chat/completions" },
   zhipu:    { model: "glm-4-flash",      host: "open.bigmodel.cn",  path: "/api/paas/v4/chat/completions" },
+  openai:   { model: "gpt-4o",           host: "api.openai.com",    path: "/v1/chat/completions" },
   ollama:   { model: "qwen2.5:7b",       host: "localhost:11434",   path: "/v1/chat/completions" },
+  custom:   { model: "",                 host: "",                  path: "" },
 };
 
 // Read URL hash / query for which page to show: ?page=lang | ?page=model
@@ -189,7 +190,36 @@ async function initModelPage() {
     path:   document.getElementById("path"),
   };
 
-  // Load current values
+  // Default placeholder hints — stored so we can restore after toggling 自定义.
+  const defaultPlaceholders = {
+    apiKey: f.apiKey.placeholder,
+    model:  f.model.placeholder,
+    host:   f.host.placeholder,
+    path:   f.path.placeholder,
+  };
+
+  // Per-provider keyring (loaded from typeanything.keyring.json). Switching
+  // preset stashes the current API Key under the active provider, then loads
+  // the new provider's stored key (or empty if none).
+  let keyring = {};
+  let activeProvider = "deepseek";  // becomes the preset whose values match schema.yaml
+  try {
+    const krRaw = await window.nativeReadKeyring();
+    keyring = JSON.parse(krRaw || "{}") || {};
+  } catch (e) { keyring = {}; }
+
+  // Detect current provider from the loaded schema host. The exact match
+  // tells us which preset to highlight + which keyring slot to seed.
+  function detectProviderFromHost(host) {
+    if (!host) return "deepseek";
+    for (const [name, preset] of Object.entries(PROVIDER_PRESETS)) {
+      if (name === "custom") continue;
+      if (preset.host && preset.host === host) return name;
+    }
+    return "custom";
+  }
+
+  // Load current values from schema.yaml.
   try {
     const cur = await window.nativeReadSchema();
     if (cur) {
@@ -197,8 +227,42 @@ async function initModelPage() {
       f.model.value  = cur.model   || "deepseek-chat";
       f.host.value   = cur.host    || "api.deepseek.com";
       f.path.value   = cur.path    || "/v1/chat/completions";
+      activeProvider = detectProviderFromHost(cur.host);
+      // Seed the keyring slot for the detected provider with the schema key
+      // (so first-time users with only schema-based config see it persist).
+      if (cur.api_key) keyring[activeProvider] = cur.api_key;
     }
   } catch (e) {}
+
+  // Two distinct visual states for the preset row:
+  //   .active  — what the user is *currently editing* (changes when they
+  //              click a preset; not yet persisted).
+  //   .current — what the runtime is actually using (the schema.yaml
+  //              snapshot; only changes after a successful save).
+  function setActivePreset(name) {
+    document.querySelectorAll(".preset").forEach(x => {
+      x.classList.toggle("active", x.dataset.preset === name);
+    });
+  }
+  function setCurrentPreset(name) {
+    document.querySelectorAll(".preset").forEach(x => {
+      x.classList.toggle("current", x.dataset.preset === name);
+    });
+  }
+  setActivePreset(activeProvider);
+  setCurrentPreset(activeProvider);   // detected from schema.yaml at load
+  let runtimeProvider = activeProvider;
+
+  // Toggle placeholders. 自定义 preset hides the semi-transparent hints
+  // (user types their own values from scratch); other presets restore them.
+  function applyPlaceholders(presetName) {
+    const blank = presetName === "custom";
+    f.apiKey.placeholder = blank ? "" : defaultPlaceholders.apiKey;
+    f.model.placeholder  = blank ? "" : defaultPlaceholders.model;
+    f.host.placeholder   = blank ? "" : defaultPlaceholders.host;
+    f.path.placeholder   = blank ? "" : defaultPlaceholders.path;
+  }
+  applyPlaceholders(activeProvider);
 
   // Live endpoint preview — show full URL the request will hit.
   const ep = document.getElementById("endpointPreview");
@@ -219,15 +283,21 @@ async function initModelPage() {
   // Preset buttons
   document.querySelectorAll(".preset").forEach(btn => {
     btn.addEventListener("click", () => {
-      const p = PROVIDER_PRESETS[btn.dataset.preset];
+      const newProvider = btn.dataset.preset;
+      const p = PROVIDER_PRESETS[newProvider];
       if (!p) return;
-      f.model.value = p.model;
-      f.host.value  = p.host;
-      f.path.value  = p.path;
+      // Save current key under the previously active provider before switching.
+      keyring[activeProvider] = f.apiKey.value;
+      activeProvider = newProvider;
+      // Load the new provider's stored key (or blank if never configured).
+      f.apiKey.value = keyring[newProvider] || "";
+      f.model.value  = p.model;
+      f.host.value   = p.host;
+      f.path.value   = p.path;
+      applyPlaceholders(newProvider);
       refreshPreview();
       f.apiKey.focus();
-      document.querySelectorAll(".preset").forEach(x => x.classList.remove("active"));
-      btn.classList.add("active");
+      setActivePreset(newProvider);
     });
   });
 
@@ -241,17 +311,29 @@ async function initModelPage() {
     window.nativeClose();
   });
 
-  // Save
+  // Save. API Key allowed to be empty — clearing it explicitly de-activates
+  // that provider (runtime will get 401 / endpoint reject on next Enter,
+  // which is the user's intent if they just want to stop using that key).
   document.getElementById("btnSaveModel").addEventListener("click", async () => {
-    const ak = f.apiKey.value.trim();
-    if (!ak) { toast("API Key 不能为空", "error"); return; }
+    const saveBtn = document.getElementById("btnSaveModel");
+    const ak = f.apiKey.value;  // no .trim() — user may want literal empty
+    saveBtn.disabled = true;
     try {
-      await window.nativeWriteSchema(ak, f.model.value.trim(),
+      // Persist per-provider keyring.
+      keyring[activeProvider] = ak;
+      try { await window.nativeWriteKeyring(JSON.stringify(keyring)); } catch (e) {}
+
+      await window.nativeWriteSchema(ak.trim(), f.model.value.trim(),
                                      f.host.value.trim(), f.path.value.trim());
-      toast("已保存，正在重启 WeaselServer ...", "ok");
-      setTimeout(() => window.nativeClose(), 1100);
+      // Mark this preset as the runtime-active one and stay open so the
+      // user can keep editing other providers.
+      runtimeProvider = activeProvider;
+      setCurrentPreset(runtimeProvider);
+      toast("已保存", "ok");
     } catch (e) {
       toast("保存失败：" + (e && e.message || e), "error");
+    } finally {
+      saveBtn.disabled = false;
     }
   });
 }

@@ -80,6 +80,11 @@ static fs::path RimeUserDir() {
 
 static fs::path LangFilePath()    { return RimeUserDir() / L"typeanything_lang.txt"; }
 static fs::path SchemaFilePath()  { return RimeUserDir() / L"typeanything.schema.yaml"; }
+// Per-provider API key store. JSON map { "deepseek": "sk-...", ... } so
+// switching presets doesn't carry over the wrong vendor's key into another
+// vendor's field. schema.yaml still holds the *active* provider's key for
+// the runtime; this is just a UI memory.
+static fs::path KeyringFilePath() { return RimeUserDir() / L"typeanything.keyring.json"; }
 
 static std::string ReadAllUtf8(const fs::path& p) {
   std::ifstream f(p, std::ios::binary);
@@ -297,9 +302,11 @@ static fs::path WeaselDir() {
 }
 
 static void KillProcByName(const wchar_t* image) {
+  // No /T — that kills the process tree. WeaselServer is the parent of
+  // ta-settings (via ShellExecute / CreateProcess from the tray menu), so
+  // /T would take this very settings panel down with it.
   std::wstring cmd = L"taskkill /F /IM ";
   cmd += image;
-  cmd += L" /T";
   STARTUPINFOW si{}; si.cb = sizeof(si);
   si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
   PROCESS_INFORMATION pi{};
@@ -479,20 +486,10 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   // Webview window (Edge WebView2).
   webview::webview w(true /* debug */, nullptr);
   w.set_title("TypeAnything");
-  if (page == "model") {
-    // 4 form fields + preset row + intro + get-key link + bottom buttons.
-    // Tested heights: 720 fits all content without scroll on a 1080p
-    // display with 100% scaling.
-    // Trimmed: was 620, dropped two rows after removing the get-key link
-    // and the install-prompt subtitle in the model form.
-    w.set_size(660, 680, WEBVIEW_HINT_NONE);
-    w.set_size(560, 540, WEBVIEW_HINT_MIN);
-  } else {
-    // Language picker is intentionally scrollable; pick a comfortable
-    // initial height that shows 2-3 chip categories.
-    w.set_size(700, 800, WEBVIEW_HINT_NONE);
-    w.set_size(560, 580, WEBVIEW_HINT_MIN);
-  }
+  // Same dimensions for both pages — user switches between them via the
+  // top tab nav, so the window size shouldn't jump.
+  w.set_size(700, 800, WEBVIEW_HINT_NONE);
+  w.set_size(560, 580, WEBVIEW_HINT_MIN);
 
   // ─── Native bridge ────────────────────────────────────────
   w.bind("nativeReadLang", [](const std::string& /*args*/) -> std::string {
@@ -555,6 +552,22 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     return "true";
   });
 
+  // Per-provider keyring. Read returns the raw JSON file contents (or "{}"
+  // if missing). Write replaces the file with the JSON string supplied by
+  // the UI. The UI is responsible for the JSON schema.
+  w.bind("nativeReadKeyring", [](const std::string& /*args*/) -> std::string {
+    std::string raw = ReadAllUtf8(KeyringFilePath());
+    if (raw.empty()) raw = "{}";
+    return "\"" + JsonEscape(raw) + "\"";
+  });
+  w.bind("nativeWriteKeyring", [](const std::string& args) -> std::string {
+    auto parts = ParseJsonStringArray(args);
+    if (parts.empty()) return "false";
+    fs::path p = KeyringFilePath();
+    std::error_code ec; fs::create_directories(p.parent_path(), ec);
+    return WriteAllUtf8(p, parts[0]) ? "true" : "false";
+  });
+
   w.bind("nativeOpenUrl", [](const std::string& args) -> std::string {
     auto parts = ParseJsonStringArray(args);
     if (parts.empty()) return "false";
@@ -586,6 +599,27 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   g_webview = &w;
   g_original_wndproc = (WNDPROC)SetWindowLongPtrW(
       hwnd, GWLP_WNDPROC, (LONG_PTR)TaSubclassProc);
+
+  // Force the new window to the foreground. When WeaselServer (MEDIUM IL,
+  // possibly background) ShellExecutes us, the OS doesn't always grant
+  // foreground focus to the new process — model-config launches in
+  // particular have been observed to open behind other windows. Use the
+  // AttachThreadInput trick to bypass SetForegroundWindow restrictions.
+  {
+    ShowWindow(hwnd, SW_SHOWNORMAL);
+    HWND fg = GetForegroundWindow();
+    DWORD fg_tid = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
+    DWORD my_tid = GetCurrentThreadId();
+    if (fg_tid && fg_tid != my_tid) {
+      AttachThreadInput(my_tid, fg_tid, TRUE);
+      SetForegroundWindow(hwnd);
+      BringWindowToTop(hwnd);
+      AttachThreadInput(my_tid, fg_tid, FALSE);
+    } else {
+      SetForegroundWindow(hwnd);
+      BringWindowToTop(hwnd);
+    }
+  }
 
   // ─── Load the UI HTML ─────────────────────────────────────
   fs::path index = ExeDir() / "ui" / "index.html";

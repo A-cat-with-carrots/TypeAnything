@@ -367,7 +367,19 @@ typeanything:
 
 ## 版本历史
 
-### v0.6.2（当前）
+### v0.6.5（当前）
+- **冷装修复**：installer cold-register TSF + bundle luna_pinyin 全套数据 + 安装失败真报错（不再 silent 100%）+ 写开始菜单 `TypeAnything.lnk → WeaselServer.exe`
+- **WeaselServer 跑 MEDIUM IL**（`CreateProcessWithTokenW` + explorer token）让 IME 在普通应用（Notepad / 微信 / Chrome / Word）正常工作，pipe ACL 不再被拒
+- **设置面板单实例 + tab 切换 + 强制置顶**：托盘点「切换风格」/「模型配置」复用现有窗口，`AttachThreadInput` 技巧绕过 SetForegroundWindow 限制
+- **每 provider 独立 API key**：`%APPDATA%\Rime\typeanything.keyring.json` 存 DeepSeek/Moonshot/智谱/OpenAI/Ollama/custom 各自 key，切 preset 不再串
+- **自定义 preset**：清空 placeholder + 字段，用户从零填
+- **当前 provider 标识**：`.preset.current` 金底 +「当前」角标 = runtime 实际在用的那个
+- **候选框样式调优**：style/layout/* 字段（而非顶级 style/*）才真正驱动 layout — font 11pt YaHei UI、margin 8/6、hilite_padding 4、candidate_spacing 24、金色 mark
+- **WeaselServer 版本从 registry 读**：`HKLM\...\Uninstall\TypeAnything\DisplayVersion` 单一来源，发版只改 installer 一处
+- **检查更新弹窗 MB_TOPMOST + MB_SETFOREGROUND**：不再藏到后台
+- **`taskkill /T` flag 去掉**：避免 ta-settings（WeaselServer 子进程）被一起 kill
+
+### v0.6.2
 - **纯净模式** — 标题栏右侧 toggle 开关，开启后写 `off` sentinel 到 lang 文件，UI 整体置灰锁定，Enter 直通宿主（不再被 IME 吞掉），实际效果 = 纯拼音中文输入法。模型配置页不显示该开关。
 - **UI 收尾打磨**
   - chip 点击后输入框光标置末尾、无蓝色高亮（`setSelectionRange(n,n)` 替代 `select()`）

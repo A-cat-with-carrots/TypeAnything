@@ -22,13 +22,41 @@ WeaselServerApp::~WeaselServerApp() {}
 
 // ─── TypeAnything in-app update check ────────────────────────────────
 //
-// Current installed version. Bump this with each release; the installer
-// will overwrite the EXE so the new constant ships automatically.
+// Fallback version string. Runtime preferred source = `DisplayVersion`
+// value under HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\
+// TypeAnything (written by ta-installer on every install). See
+// GetInstalledVersion() below — this literal only kicks in when the
+// registry read fails (e.g. running from a dev build that never went
+// through the installer).
 #ifndef TA_VERSION
-#define TA_VERSION L"v0.6.2"
+#define TA_VERSION L"v0.6.4"
 #endif
 
 namespace {
+
+// Read the installed version from the Add/Remove Programs registry entry
+// (set by ta-installer step 12). Returns the literal e.g. "v0.6.4", with
+// the "v" prefix prepended. Falls back to the compile-time TA_VERSION.
+static std::wstring GetInstalledVersion() {
+  HKEY h;
+  if (RegOpenKeyExW(
+          HKEY_LOCAL_MACHINE,
+          L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\TypeAnything",
+          0, KEY_READ | KEY_WOW64_64KEY, &h) == ERROR_SUCCESS) {
+    WCHAR buf[64] = {0};
+    DWORD sz = sizeof(buf);
+    DWORD type = 0;
+    LONG r = RegQueryValueExW(h, L"DisplayVersion", nullptr, &type,
+                               (LPBYTE)buf, &sz);
+    RegCloseKey(h);
+    if (r == ERROR_SUCCESS && type == REG_SZ && buf[0]) {
+      std::wstring v = L"v";
+      v += buf;
+      return v;
+    }
+  }
+  return std::wstring(TA_VERSION);
+}
 
 // Minimal WinHTTP GET helper. Returns response body as UTF-8 string,
 // or empty on any failure. Supports HTTPS only.
@@ -191,7 +219,7 @@ bool check_update_worker() {
     MessageBoxW(NULL,
                 L"无法连接 GitHub。请检查网络后重试。",
                 L"TypeAnything 更新检查",
-                MB_OK | MB_ICONWARNING);
+                MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
     return true;
   }
 
@@ -202,15 +230,15 @@ bool check_update_worker() {
     MessageBoxW(NULL,
                 L"无法解析 GitHub 返回的版本信息。",
                 L"TypeAnything 更新检查",
-                MB_OK | MB_ICONWARNING);
+                MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
     return true;
   }
 
-  // Convert current TA_VERSION (wide literal) to a UTF-8 std::string for
-  // comparison with the GitHub tag.
+  // Read current installed version from the registry (written by
+  // ta-installer). Compare against the GitHub release tag.
+  std::wstring wcur = GetInstalledVersion();
   std::string cur;
   {
-    std::wstring wcur = TA_VERSION;
     int n = WideCharToMultiByte(CP_UTF8, 0, wcur.data(), (int)wcur.size(),
                                 nullptr, 0, nullptr, nullptr);
     cur.resize(n);
@@ -219,9 +247,9 @@ bool check_update_worker() {
   }
 
   if (CompareVersion(tag, cur) <= 0) {
-    std::wstring msg = L"已是最新版本（" TA_VERSION L"）。";
+    std::wstring msg = L"已是最新版本（" + wcur + L"）。";
     MessageBoxW(NULL, msg.c_str(), L"TypeAnything 更新检查",
-                MB_OK | MB_ICONINFORMATION);
+                MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
     return true;
   }
 
@@ -237,10 +265,10 @@ bool check_update_worker() {
   std::wstring prompt =
       L"发现新版本：" + toWide(tag) +
       (release_name.empty() ? L"" : (L"  " + toWide(release_name))) +
-      L"\n\n当前版本：" TA_VERSION L"\n\n立即下载并安装吗？";
+      L"\n\n当前版本：" + wcur + L"\n\n立即下载并安装吗？";
   int r = MessageBoxW(NULL, prompt.c_str(),
                       L"TypeAnything 更新可用",
-                      MB_YESNO | MB_ICONQUESTION);
+                      MB_YESNO | MB_ICONQUESTION | MB_TOPMOST | MB_SETFOREGROUND);
   if (r != IDYES) return true;
 
   // Parse host + path from dl_url. Format:
@@ -249,14 +277,14 @@ bool check_update_worker() {
   const std::wstring scheme = L"https://";
   if (wurl.compare(0, scheme.size(), scheme) != 0) {
     MessageBoxW(NULL, L"下载链接格式异常。", L"TypeAnything 更新",
-                MB_OK | MB_ICONWARNING);
+                MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
     return true;
   }
   size_t host_start = scheme.size();
   size_t path_start = wurl.find(L'/', host_start);
   if (path_start == std::wstring::npos) {
     MessageBoxW(NULL, L"下载链接格式异常。", L"TypeAnything 更新",
-                MB_OK | MB_ICONWARNING);
+                MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
     return true;
   }
   std::wstring dl_host = wurl.substr(host_start, path_start - host_start);
@@ -273,7 +301,7 @@ bool check_update_worker() {
     std::wstring err = L"下载失败。可以手动从浏览器打开下载页吗？\n\n"
                        + wurl;
     if (MessageBoxW(NULL, err.c_str(), L"TypeAnything 更新",
-                    MB_YESNO | MB_ICONWARNING) == IDYES) {
+                    MB_YESNO | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND) == IDYES) {
       ShellExecuteW(NULL, L"open", wurl.c_str(), NULL, NULL, SW_SHOWNORMAL);
     }
     return true;

@@ -504,6 +504,22 @@ h1 .accent { color: var(--accent); }
   color: var(--ink);
   background: rgba(212, 178, 122, 0.14);
 }
+/* The preset that the runtime is actually using (the one currently saved
+   in schema.yaml). Solid gold fill + tiny "当前" suffix so the user can
+   tell which provider is live independent of which one they're editing. */
+.preset.current {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-deep);
+  font-weight: 600;
+}
+.preset.current::after {
+  content: " · 当前";
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
 
 .form {
   display: grid;
@@ -581,8 +597,20 @@ h1 .accent { color: var(--accent); }
   display: flex; gap: 10px;
   justify-content: flex-end;
   padding-top: 4px;
-  margin-top: 18px;
+  /* Pushed to bottom of the page area via the flex layout below.
+     margin-bottom lifts the buttons one row above the page bottom edge. */
+  margin-top: auto;
+  margin-bottom: 42px;
 }
+
+/* Make the model page a flex column so .actions auto-floats to the bottom
+   (aligning visually with the last chip row of the lang page). */
+#page-model {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+#page-model.page[hidden] { display: none; }
 
 /* ─── Toast ─────────────────────────────────────────────────────── */
 .toast {

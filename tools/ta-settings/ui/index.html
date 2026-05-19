@@ -113,12 +113,12 @@
     <p class="sub">你的输入只发到下面这个 endpoint。无中转、无后端代理。默认 DeepSeek，可换 OpenAI / Moonshot / 智谱 / 自托管 vLLM / Ollama 等任意 OpenAI Chat Completions 兼容 API。</p>
 
     <div class="preset-row">
-      <span class="preset-label">预设</span>
       <button class="preset" data-preset="deepseek">DeepSeek</button>
-      <button class="preset" data-preset="openai">OpenAI</button>
       <button class="preset" data-preset="moonshot">Moonshot</button>
       <button class="preset" data-preset="zhipu">智谱</button>
+      <button class="preset" data-preset="openai">OpenAI</button>
       <button class="preset" data-preset="ollama">Ollama</button>
+      <button class="preset" data-preset="custom">自定义</button>
     </div>
 
     <form id="modelForm" class="form-grid" onsubmit="return false;">
@@ -135,11 +135,11 @@
         <input id="model" type="text" placeholder="deepseek-chat" />
       </label>
 
-      <label class="half">
+      <label class="full">
         <span>Host</span>
         <input id="host" type="text" placeholder="api.deepseek.com" />
       </label>
-      <label class="half">
+      <label class="full">
         <span>Path</span>
         <input id="path" type="text" placeholder="/v1/chat/completions" />
       </label>

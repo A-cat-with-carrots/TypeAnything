@@ -761,6 +761,10 @@ static void DoInstall(InstallOptions opts) {
       std::ofstream wf(wcust, std::ios::binary | std::ios::trunc);
       wf <<
         "# Managed by TypeAnything installer — Microsoft-IME-style layout.\n"
+        "# NOTE: Weasel's layout calculation reads style/layout/*, NOT the\n"
+        "# top-level style/* fields for spacing/padding/margin. Only font_*\n"
+        "# and color_scheme propagate from style/* — the rest must go under\n"
+        "# style/layout/* to actually affect rendering.\n"
         "patch:\n"
         "  \"style/horizontal\": true\n"
         "  \"style/inline_preedit\": true\n"
@@ -769,12 +773,15 @@ static void DoInstall(InstallOptions opts) {
         "  \"style/font_point\": 11\n"
         "  \"style/label_font_point\": 11\n"
         "  \"style/comment_font_point\": 11\n"
-        "  \"style/margin_x\": 8\n"
-        "  \"style/margin_y\": 2\n"
-        "  \"style/hilite_padding\": 6\n"
-        "  \"style/hilite_spacing\": 0\n"
-        "  \"style/candidate_spacing\": 22\n"
         "  \"style/color_scheme\": typeanything_light\n"
+        "  \"style/layout/margin_x\": 8\n"
+        "  \"style/layout/margin_y\": 6\n"
+        "  \"style/layout/hilite_padding\": 4\n"
+        "  \"style/layout/hilite_spacing\": 4\n"
+        "  \"style/layout/candidate_spacing\": 24\n"
+        "  \"style/layout/linespacing\": 0\n"
+        "  \"style/layout/border_width\": 1\n"
+        "  \"style/layout/corner_radius\": 4\n"
         "  \"preset_color_schemes/typeanything_light\":\n"
         "    name: TypeAnything Light\n"
         "    author: HRDAI\n"
@@ -956,7 +963,7 @@ static void DoInstall(InstallOptions opts) {
     std::error_code ec;
     fs::copy_file(fs::path(self), uninst,
                   fs::copy_options::overwrite_existing, ec);
-    WriteUninstallRegistry(wdir, L"0.6.3");
+    WriteUninstallRegistry(wdir, L"0.6.5");
   }
 
   // 13. Start Menu shortcut → WeaselServer.exe. User-facing "start the
