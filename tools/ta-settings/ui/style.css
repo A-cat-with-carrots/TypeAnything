@@ -505,20 +505,13 @@ h1 .accent { color: var(--accent); }
   background: rgba(212, 178, 122, 0.14);
 }
 /* The preset that the runtime is actually using (the one currently saved
-   in schema.yaml). Solid gold fill + tiny "当前" suffix so the user can
-   tell which provider is live independent of which one they're editing. */
+   in schema.yaml). Solid gold fill so the user can tell which provider is
+   live independent of which one they're editing. */
 .preset.current {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--bg-deep);
   font-weight: 600;
-}
-.preset.current::after {
-  content: " · 当前";
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  opacity: 0.75;
 }
 
 .form {
