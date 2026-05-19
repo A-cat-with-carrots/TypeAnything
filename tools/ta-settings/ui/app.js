@@ -13,7 +13,6 @@
 const PROVIDER_PRESETS = {
   deepseek: { model: "deepseek-chat",    host: "api.deepseek.com",  path: "/v1/chat/completions" },
   moonshot: { model: "moonshot-v1-8k",   host: "api.moonshot.cn",   path: "/v1/chat/completions" },
-  zhipu:    { model: "glm-4-flash",      host: "open.bigmodel.cn",  path: "/api/paas/v4/chat/completions" },
   openai:   { model: "gpt-4o",           host: "api.openai.com",    path: "/v1/chat/completions" },
   ollama:   { model: "qwen2.5:7b",       host: "localhost:11434",   path: "/v1/chat/completions" },
   custom:   { model: "",                 host: "",                  path: "" },
