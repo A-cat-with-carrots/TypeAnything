@@ -23,8 +23,10 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #include <dwmapi.h>
+#include <winhttp.h>
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "winhttp.lib")
 
 #include <filesystem>
 #include <fstream>
@@ -85,6 +87,7 @@ static fs::path SchemaFilePath()  { return RimeUserDir() / L"typeanything.schema
 // vendor's field. schema.yaml still holds the *active* provider's key for
 // the runtime; this is just a UI memory.
 static fs::path KeyringFilePath() { return RimeUserDir() / L"typeanything.keyring.json"; }
+static fs::path PromptsFilePath() { return RimeUserDir() / L"typeanything_prompts.txt"; }
 
 static std::string ReadAllUtf8(const fs::path& p) {
   std::ifstream f(p, std::ios::binary);
@@ -107,6 +110,151 @@ static bool WriteAllUtf8(const fs::path& p, const std::string& content) {
   if (!f.is_open()) return false;
   f.write(content.data(), (std::streamsize)content.size());
   return f.good();
+}
+
+// Read the ===<section>=== body from typeanything_prompts.txt (UTF-8).
+static std::string ReadPromptSection(const std::string& section) {
+  std::string raw = ReadAllUtf8(PromptsFilePath());
+  if (raw.empty()) return "";
+  std::string marker = "===" + section + "===";
+  size_t start = raw.find(marker);
+  if (start == std::string::npos) return "";
+  start += marker.size();
+  if (start < raw.size() && raw[start] == '\r') ++start;
+  if (start < raw.size() && raw[start] == '\n') ++start;
+  size_t end = raw.find("\n===", start);
+  std::string body =
+      (end == std::string::npos) ? raw.substr(start) : raw.substr(start, end - start);
+  while (!body.empty() && (body.back() == '\n' || body.back() == '\r' ||
+                           body.back() == ' ' || body.back() == '\t'))
+    body.pop_back();
+  return body;
+}
+
+static std::string ReplaceAllStr(std::string s, const std::string& a,
+                                 const std::string& b) {
+  if (a.empty()) return s;
+  size_t pos = 0;
+  while ((pos = s.find(a, pos)) != std::string::npos) {
+    s.replace(pos, a.size(), b);
+    pos += b.size();
+  }
+  return s;
+}
+
+// HTTPS POST to host+path with Bearer api_key. Returns response body (UTF-8)
+// or "" on transport failure; sets *err to a human message on failure.
+static std::string HttpsPost(const std::string& host, const std::string& path,
+                             const std::string& api_key,
+                             const std::string& body, std::string* err) {
+  auto fail = [&](const std::string& m) -> std::string {
+    if (err) *err = m;
+    return "";
+  };
+  // host may be "api.deepseek.com" or include scheme — strip scheme.
+  std::string h = host;
+  size_t sp = h.find("://");
+  if (sp != std::string::npos) h = h.substr(sp + 3);
+  // strip any path that snuck into host
+  size_t slash = h.find('/');
+  if (slash != std::string::npos) h = h.substr(0, slash);
+  std::wstring whost = Utf8ToWide(h);
+  std::wstring wpath = Utf8ToWide(path.empty() ? "/v1/chat/completions" : path);
+
+  HINTERNET hSession = WinHttpOpen(L"TypeAnything-Classifier/1.0",
+                                   WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                                   WINHTTP_NO_PROXY_NAME,
+                                   WINHTTP_NO_PROXY_BYPASS, 0);
+  if (!hSession) return fail("WinHttpOpen failed");
+  HINTERNET hConnect = WinHttpConnect(hSession, whost.c_str(),
+                                      INTERNET_DEFAULT_HTTPS_PORT, 0);
+  if (!hConnect) { WinHttpCloseHandle(hSession); return fail("WinHttpConnect failed"); }
+  HINTERNET hReq = WinHttpOpenRequest(hConnect, L"POST", wpath.c_str(), NULL,
+                                      WINHTTP_NO_REFERER,
+                                      WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                      WINHTTP_FLAG_SECURE);
+  if (!hReq) {
+    WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession);
+    return fail("WinHttpOpenRequest failed");
+  }
+  std::wstring headers =
+      L"Content-Type: application/json\r\nAuthorization: Bearer " +
+      Utf8ToWide(api_key);
+  BOOL ok = WinHttpSendRequest(hReq, headers.c_str(), (DWORD)-1L,
+                               (LPVOID)body.data(), (DWORD)body.size(),
+                               (DWORD)body.size(), 0);
+  if (ok) ok = WinHttpReceiveResponse(hReq, NULL);
+  std::string resp;
+  if (ok) {
+    DWORD avail = 0;
+    do {
+      avail = 0;
+      if (!WinHttpQueryDataAvailable(hReq, &avail) || avail == 0) break;
+      std::string chunk(avail, '\0');
+      DWORD read = 0;
+      if (!WinHttpReadData(hReq, &chunk[0], avail, &read)) break;
+      chunk.resize(read);
+      resp += chunk;
+    } while (avail > 0);
+  }
+  DWORD status = 0, slen = sizeof(status);
+  WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                      WINHTTP_HEADER_NAME_BY_INDEX, &status, &slen,
+                      WINHTTP_NO_HEADER_INDEX);
+  WinHttpCloseHandle(hReq);
+  WinHttpCloseHandle(hConnect);
+  WinHttpCloseHandle(hSession);
+  if (!ok) return fail("网络请求失败（检查网络 / 防火墙）");
+  if (status == 401) return fail("HTTP 401 — API key 无效或未配置");
+  if (status >= 400) return fail("HTTP " + std::to_string(status));
+  return resp;
+}
+
+// Pull the assistant message content out of an OpenAI-compatible JSON reply.
+static std::string ExtractContent(const std::string& json) {
+  size_t k = json.find("\"content\"");
+  if (k == std::string::npos) return "";
+  size_t colon = json.find(':', k);
+  if (colon == std::string::npos) return "";
+  size_t q1 = json.find('"', colon + 1);
+  if (q1 == std::string::npos) return "";
+  std::string out;
+  for (size_t i = q1 + 1; i < json.size(); ++i) {
+    char c = json[i];
+    if (c == '\\' && i + 1 < json.size()) {
+      char e = json[++i];
+      switch (e) {
+        case 'n': out.push_back('\n'); break;
+        case 't': out.push_back('\t'); break;
+        case 'r': out.push_back('\r'); break;
+        case '"': out.push_back('"'); break;
+        case '\\': out.push_back('\\'); break;
+        case '/': out.push_back('/'); break;
+        case 'u': {
+          if (i + 4 < json.size()) {
+            unsigned cp = (unsigned)strtol(json.substr(i + 1, 4).c_str(), nullptr, 16);
+            i += 4;
+            if (cp < 0x80) out.push_back((char)cp);
+            else if (cp < 0x800) {
+              out.push_back((char)(0xC0 | (cp >> 6)));
+              out.push_back((char)(0x80 | (cp & 0x3F)));
+            } else {
+              out.push_back((char)(0xE0 | (cp >> 12)));
+              out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+              out.push_back((char)(0x80 | (cp & 0x3F)));
+            }
+          }
+          break;
+        }
+        default: out.push_back(e); break;
+      }
+    } else if (c == '"') {
+      break;
+    } else {
+      out.push_back(c);
+    }
+  }
+  return out;
 }
 
 // ─── JSON helpers (handcrafted; no library dep) ──────────────
@@ -566,6 +714,51 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     fs::path p = KeyringFilePath();
     std::error_code ec; fs::create_directories(p.parent_path(), ec);
     return WriteAllUtf8(p, parts[0]) ? "true" : "false";
+  });
+
+  // Classify a free-form / chip target into A/B/C/D via one LLM call.
+  // Returns the single letter on success, or "error:<msg>" so the UI can
+  // surface failures instead of silently mis-routing.
+  w.bind("nativeClassifyLang", [](const std::string& args) -> std::string {
+    auto parts = ParseJsonStringArray(args);
+    if (parts.empty()) return "error:empty target";
+    std::string target = parts[0];
+
+    // Read provider config from schema.yaml.
+    std::string yaml = ReadAllUtf8(SchemaFilePath());
+    std::string apikey = ExtractYamlField(yaml, "api_key");
+    std::string model  = ExtractYamlField(yaml, "model");
+    std::string host   = ExtractYamlField(yaml, "host");
+    std::string path   = ExtractYamlField(yaml, "path");
+    if (model.empty()) model = "deepseek-chat";
+    if (host.empty())  host  = "api.deepseek.com";
+    if (path.empty())  path  = "/v1/chat/completions";
+    if (apikey.empty()) return "error:API key 未配置（先到模型配置填入）";
+
+    std::string classify = ReadPromptSection("CLASSIFY");
+    if (classify.empty())
+      return "error:分类 prompt 缺失（typeanything_prompts.txt）";
+    classify = ReplaceAllStr(classify, "{TARGET}", target);
+
+    std::ostringstream payload;
+    payload << "{\"model\":\"" << JsonEscape(model) << "\","
+            << "\"temperature\":0,"
+            << "\"max_tokens\":4,"
+            << "\"messages\":["
+            << "{\"role\":\"system\",\"content\":\"" << JsonEscape(classify) << "\"},"
+            << "{\"role\":\"user\",\"content\":\"" << JsonEscape(target) << "\"}]}";
+
+    std::string err;
+    std::string resp = HttpsPost(host, path, apikey, payload.str(), &err);
+    if (resp.empty()) return "error:" + (err.empty() ? "网络失败" : err);
+
+    std::string content = ExtractContent(resp);
+    // Fallback: first A/B/C/D char wins.
+    for (char c : content) {
+      if (c == 'A' || c == 'B' || c == 'C' || c == 'D')
+        return std::string(1, c);
+    }
+    return "error:分类返回无法解析（" + content.substr(0, 20) + "）";
   });
 
   w.bind("nativeOpenUrl", [](const std::string& args) -> std::string {

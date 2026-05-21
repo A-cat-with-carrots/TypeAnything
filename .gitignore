@@ -94,3 +94,6 @@ tools/ta-settings/build/
 tools/ta-installer/.xmake/
 tools/ta-installer/build/
 tools/ta-installer/embed/
+
+# Eval result artifacts (regeneratable via run_eval.py)
+tools/eval/results*.jsonl

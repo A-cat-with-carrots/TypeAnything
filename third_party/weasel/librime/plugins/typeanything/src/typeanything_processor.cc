@@ -318,6 +318,53 @@ void TypeAnythingProcessor::LoadConfig() {
   if (config->GetDouble("typeanything/temperature", &d)) temperature_ = d;
 }
 
+// Replace every occurrence of `needle` in `s` with `with`.
+static std::string ReplaceAll(std::string s, const std::string& needle,
+                              const std::string& with) {
+  if (needle.empty()) return s;
+  size_t pos = 0;
+  while ((pos = s.find(needle, pos)) != std::string::npos) {
+    s.replace(pos, needle.size(), with);
+    pos += with.size();
+  }
+  return s;
+}
+
+// Read %APPDATA%\Rime\typeanything_prompts.txt and return the body of the
+// ===<category>=== section (category = 'A'/'B'/'C'/'D'/'CLASSIFY' — but we
+// only fetch single-letter sections here). Empty string if file or section
+// missing. The file is UTF-8; we never embed Chinese in this .cc (cp936-safe).
+static std::string LoadPromptSection(const std::string& section) {
+  wchar_t appdata[MAX_PATH] = {0};
+  if (FAILED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata)))
+    return "";
+  std::wstring path =
+      std::wstring(appdata) + L"\\Rime\\typeanything_prompts.txt";
+  HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
+                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) return "";
+  std::string raw;
+  char buf[8192];
+  DWORD got = 0;
+  while (ReadFile(h, buf, sizeof(buf), &got, NULL) && got > 0)
+    raw.append(buf, got);
+  CloseHandle(h);
+
+  std::string marker = "===" + section + "===";
+  size_t start = raw.find(marker);
+  if (start == std::string::npos) return "";
+  start += marker.size();
+  if (start < raw.size() && raw[start] == '\r') ++start;
+  if (start < raw.size() && raw[start] == '\n') ++start;
+  size_t end = raw.find("\n===", start);
+  std::string body =
+      (end == std::string::npos) ? raw.substr(start) : raw.substr(start, end - start);
+  while (!body.empty() && (body.back() == '\n' || body.back() == '\r' ||
+                           body.back() == ' ' || body.back() == '\t'))
+    body.pop_back();
+  return body;
+}
+
 std::string TypeAnythingProcessor::ResolveTargetLang() const {
   // Read %APPDATA%\Rime\typeanything_lang.txt — first non-empty line is
   // the active language code. Map to full name. Fall back to schema default.
@@ -431,12 +478,33 @@ rime::ProcessResult TypeAnythingProcessor::ProcessKeyEvent(
 void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
   uint64_t this_id = request_id_.fetch_add(1) + 1;
   size_t chinese_chars = Utf8CodePointCount(chinese);
-  std::string lang = ResolveTargetLang();
+  std::string raw_lang = ResolveTargetLang();
   // No-translate mode: skip LLM call when the lang picker selects "off".
-  if (lang == "none" || lang == "None" || lang == "no-translate" ||
-      lang == "off" || lang == "Off") {
+  if (raw_lang == "none" || raw_lang == "None" || raw_lang == "no-translate" ||
+      raw_lang == "off" || raw_lang == "Off") {
     return;
   }
+
+  // Parse "X:name" category prefix written by ta-settings (X = A/B/C/D).
+  // Legacy lang.txt without prefix → category 0 → generic fallback prompt.
+  char category = 0;
+  std::string lang = raw_lang;
+  if (raw_lang.size() >= 2 && raw_lang[1] == ':' &&
+      (raw_lang[0] == 'A' || raw_lang[0] == 'B' ||
+       raw_lang[0] == 'C' || raw_lang[0] == 'D')) {
+    category = raw_lang[0];
+    lang = raw_lang.substr(2);
+  }
+
+  // Build the category-specific system prompt from the runtime prompts file.
+  // Kept out of this .cc to stay cp936-safe and to allow prompt iteration
+  // without rebuilding librime.
+  std::string system_prompt;
+  if (category) {
+    std::string tmpl = LoadPromptSection(std::string(1, category));
+    if (!tmpl.empty()) system_prompt = ReplaceAll(tmpl, "{LANG}", lang);
+  }
+
   std::string api_key = api_key_;
   std::string model = model_;
   std::string endpoint = endpoint_;
@@ -448,10 +516,13 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
 
   // Spawn worker thread for LLM call. When it returns, delete the original
   // Chinese chars and paste the translation.
-  std::thread([this, this_id, chinese, chinese_chars, lang, api_key, model,
-               endpoint, path, temp]() {
-    // High-quality translation prompt.
-    std::string system_prompt =
+  std::thread([this, this_id, chinese, chinese_chars, lang, system_prompt,
+               api_key, model, endpoint, path, temp]() {
+    // Fallback (legacy lang.txt with no category prefix, or prompts file
+    // missing): plain professional-translator prompt, English-only literals.
+    std::string sys = system_prompt;
+    if (sys.empty()) {
+      sys =
         "You are a professional translator. Translate the user's Chinese into "
         "fluent, idiomatic " + lang + ". Rules:\n"
         "1. Preserve tone (casual, formal, technical, polite, etc.).\n"
@@ -462,6 +533,7 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
         "4. Keep proper nouns / English terms / numbers / URLs unchanged.\n"
         "5. Output ONLY the translation. No quotes, no markdown, no notes, no "
         "prefix like 'Translation:'. Just the target text, nothing else.";
+    }
 
     std::ostringstream payload;
     payload << "{"
@@ -469,7 +541,7 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
             << "\"temperature\":" << temp << ","
             << "\"messages\":["
             << "{\"role\":\"system\",\"content\":\""
-            << JsonEscape(system_prompt) << "\"},"
+            << JsonEscape(sys) << "\"},"
             << "{\"role\":\"user\",\"content\":\""
             << JsonEscape(chinese) << "\"}"
             << "]}";

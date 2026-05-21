@@ -43,3 +43,6 @@ IDR_DATA_ESSAY         RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\
 IDR_DATA_SYMBOLS       RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\symbols.yaml"
 IDR_DATA_PUNCTUATION   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\punctuation.yaml"
 IDR_DATA_KEY_BINDINGS  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\key_bindings.yaml"
+
+// ───── Translate / classify prompts (UTF-8) ─────────────────────
+IDR_PROMPTS_TXT        RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\typeanything_prompts.txt"

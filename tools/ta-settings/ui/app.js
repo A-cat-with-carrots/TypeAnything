@@ -70,6 +70,11 @@ async function initLangPage() {
   try {
     const cur = await window.nativeReadLang();
     currentLangValue = (cur || "").trim();
+    // Strip the "X:" category prefix written by save() (X = A/B/C/D) so the
+    // input shows only the human label.
+    if (/^[ABCD]:/.test(currentLangValue)) {
+      currentLangValue = currentLangValue.slice(2).trim();
+    }
     if (currentLangValue && !DEFAULT_ALIASES.has(currentLangValue.toLowerCase())) {
       // Show "无" instead of "off" — friendlier UI label.
       input.value = currentLangValue.toLowerCase() === "off"
@@ -165,8 +170,30 @@ async function initLangPage() {
     v = toStoredLang(v);
     saveBtn.disabled = true;
     try {
-      await window.nativeWriteLang(v);
-      toast("已保存", "ok");
+      // Pure mode ("off") skips classification — write the bare sentinel so
+      // the plugin's codepage-safe compare still matches.
+      if (v.toLowerCase() === "off") {
+        await window.nativeWriteLang("off");
+        toast("已保存", "ok");
+        return;
+      }
+      // Classify the target into A/B/C/D via one LLM call, then store as
+      // "X:name" so the plugin picks the right category prompt at Enter.
+      const orig = saveBtn.textContent;
+      saveBtn.textContent = "分类中…";
+      const r = await window.nativeClassifyLang(v);
+      saveBtn.textContent = orig;
+      if (!r || r.startsWith("error:")) {
+        toast("分类失败：" + (r ? r.slice(6) : "未知错误"), "error");
+        return;  // keep old lang.txt, don't write a bad value
+      }
+      const cat = r.trim().toUpperCase();
+      if (!"ABCD".includes(cat) || cat.length !== 1) {
+        toast("分类返回非法值：" + cat, "error");
+        return;
+      }
+      await window.nativeWriteLang(cat + ":" + v);
+      toast("已保存（" + cat + "）", "ok");
       // Stay open — user may want to make more changes. They close with X.
     } catch (e) {
       toast("保存失败：" + (e && e.message || e), "error");

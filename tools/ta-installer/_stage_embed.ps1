@@ -57,6 +57,10 @@ StageDataFile "symbols.yaml"
 StageDataFile "punctuation.yaml"
 StageDataFile "key_bindings.yaml"
 
+# 7. Translate / classify prompts (UTF-8). Source of truth = embed_prompts.txt
+#    (generated from tools/eval/run_eval.py validated prompts).
+Copy-Item "$here\embed_prompts.txt" "$embed\typeanything_prompts.txt"
+
 # Compile installer.rc → .res → .obj (real COFF) so xmake link picks it up
 # as a normal object file. xmake's built-in RC handling outputs RES format
 # but under a .obj name, which link.exe silently drops.

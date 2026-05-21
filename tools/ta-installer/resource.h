@@ -34,4 +34,7 @@
 #define IDR_DATA_PUNCTUATION   5006
 #define IDR_DATA_KEY_BINDINGS  5007
 
+// 4-category + classify prompts (UTF-8). Deployed to %APPDATA%\Rime\.
+#define IDR_PROMPTS_TXT        6001
+
 #endif

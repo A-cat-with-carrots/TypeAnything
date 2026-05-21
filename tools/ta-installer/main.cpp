@@ -780,6 +780,15 @@ static void DoInstall(InstallOptions opts) {
       df.write((const char*)dptr, (std::streamsize)dsz);
     }
 
+    // Translate / classify prompts (UTF-8). Always overwrite so a reinstall
+    // ships the latest prompt tuning. processor.cc + ta-settings read this.
+    if (auto [pptr, psz] = LoadEmbedded(MAKEINTRESOURCEW(IDR_PROMPTS_TXT));
+        pptr && psz > 0) {
+      std::ofstream pf(udir / L"typeanything_prompts.txt",
+                       std::ios::binary | std::ios::trunc);
+      pf.write((const char*)pptr, (std::streamsize)psz);
+    }
+
     // Default custom.yaml — pin the schema list to TypeAnything, set
     // menu page_size to 7 (Microsoft-IME parity), and force non-inline
     // preedit in Office apps where inline-mode TSF caret reporting is
@@ -851,10 +860,11 @@ static void DoInstall(InstallOptions opts) {
         "    nextpage_color: 0xFF303030\n";
     }
 
-    // Seed lang.txt with target (so ResolveTargetLang has something on Enter
-    // before user opens the settings panel).
+    // Seed lang.txt with target + category prefix (so ResolveTargetLang has
+    // something on Enter before user opens the settings panel). Default is
+    // "A:English" (A = NATURAL_LANGUAGE category, English target).
     std::ofstream lf(udir / L"typeanything_lang.txt", std::ios::binary | std::ios::trunc);
-    lf << (opts.target_lang.empty() ? "English" : opts.target_lang);
+    lf << (opts.target_lang.empty() ? "A:English" : opts.target_lang);
   }
 
   // 6. Deploy Rime base data (luna_pinyin + presets) to <wdir>\data\.
