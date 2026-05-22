@@ -57,6 +57,20 @@ StageDataFile "symbols.yaml"
 StageDataFile "punctuation.yaml"
 StageDataFile "key_bindings.yaml"
 
+# 6b. OpenCC data — required by the schema's simplifier@simplification_filter
+#     (opencc_config: t2s.json). Without these the simplifier fails to load,
+#     traditional luna_pinyin output passes through unconverted AND the
+#     candidate generation chain errors out → empty candidate window.
+#     Only the t2s (繁→简) chain is needed: t2s.json + TSPhrases + TSCharacters.
+$opencc = Join-Path $pfData "opencc"
+$openccDst = Join-Path $embed "opencc"
+New-Item -ItemType Directory -Force -Path $openccDst | Out-Null
+foreach ($f in "t2s.json","TSPhrases.ocd2","TSCharacters.ocd2") {
+    $srcF = Join-Path $opencc $f
+    if (-not (Test-Path $srcF)) { throw "OpenCC data missing: $srcF (install official 小狼毫 once to get opencc/)" }
+    Copy-Item $srcF (Join-Path $openccDst $f)
+}
+
 # 7. Translate / classify prompts (UTF-8). Source of truth = embed_prompts.txt
 #    (generated from tools/eval/run_eval.py validated prompts).
 Copy-Item "$here\embed_prompts.txt" "$embed\typeanything_prompts.txt"

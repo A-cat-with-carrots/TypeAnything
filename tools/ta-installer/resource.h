@@ -37,4 +37,9 @@
 // 4-category + classify prompts (UTF-8). Deployed to %APPDATA%\Rime\.
 #define IDR_PROMPTS_TXT        6001
 
+// OpenCC t2s (繁→简) data — deployed to <wdir>\data\opencc\.
+#define IDR_OPENCC_T2S_JSON    7001
+#define IDR_OPENCC_TS_PHRASES  7002
+#define IDR_OPENCC_TS_CHARS    7003
+
 #endif

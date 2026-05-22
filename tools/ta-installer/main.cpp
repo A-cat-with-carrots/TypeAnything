@@ -902,6 +902,31 @@ static void DoInstall(InstallOptions opts) {
                  "Rime 字典文件无法部署（杀软拦截？磁盘只读？）");
       return;
     }
+
+    // OpenCC t2s data → <wdir>\data\opencc\. The schema's simplifier filter
+    // (opencc_config: t2s.json) needs these; without them the filter fails
+    // to load → traditional output + EMPTY CANDIDATE WINDOW (issue #1).
+    fs::path opencc = data / L"opencc";
+    std::error_code ec2; fs::create_directories(opencc, ec2);
+    struct OcFile { LPCWSTR res; const wchar_t* name; };
+    OcFile oc_files[] = {
+      {MAKEINTRESOURCEW(IDR_OPENCC_T2S_JSON),   L"t2s.json"},
+      {MAKEINTRESOURCEW(IDR_OPENCC_TS_PHRASES), L"TSPhrases.ocd2"},
+      {MAKEINTRESOURCEW(IDR_OPENCC_TS_CHARS),   L"TSCharacters.ocd2"},
+    };
+    bool oc_ok = true;
+    for (auto& o : oc_files) {
+      fs::path dst = opencc / o.name;
+      if (fs::exists(dst)) continue;
+      if (!WriteEmbeddedToFile(o.res, dst)) oc_ok = false;
+    }
+    if (!oc_ok) {
+      PushStatus(82, "OpenCC 数据写失败 — 可能出繁体且候选窗为空",
+                 "opencc t2s 写失败", "error", false,
+                 "OpenCC 简繁转换数据无法部署（杀软拦截？磁盘只读？）。"
+                 "缺失会导致输出繁体 + 候选窗不显示。");
+      return;
+    }
   }
 
   // 7. Cold-register weaselx64.dll as a TSF text service.

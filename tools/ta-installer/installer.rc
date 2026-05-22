@@ -46,3 +46,8 @@ IDR_DATA_KEY_BINDINGS  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\
 
 // ───── Translate / classify prompts (UTF-8) ─────────────────────
 IDR_PROMPTS_TXT        RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\typeanything_prompts.txt"
+
+// ───── OpenCC t2s data (繁→简 simplifier) ───────────────────────
+IDR_OPENCC_T2S_JSON    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\opencc\\t2s.json"
+IDR_OPENCC_TS_PHRASES  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\opencc\\TSPhrases.ocd2"
+IDR_OPENCC_TS_CHARS    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\opencc\\TSCharacters.ocd2"
