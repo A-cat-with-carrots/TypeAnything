@@ -281,6 +281,7 @@ main.pure-locked .page {
   background: transparent;
   font-family: var(--font-sans);
   font-size: 13px;
+  font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--muted);
   cursor: pointer;
@@ -630,5 +631,5 @@ h1 .accent { color: var(--accent); }
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
-.toast.ok    { background: var(--green); }
+.toast.ok    { background: var(--accent); color: #FFFFFF; }
 .toast.error { background: #C2603F; color: #FFFFFF; }

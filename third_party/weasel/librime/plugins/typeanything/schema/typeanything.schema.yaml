@@ -91,7 +91,7 @@ simplification_filter:
 #  全角 mode and turn typed letters into Ｆｕｌｌｗｉｄｔｈ.)
 punctuator:
   half_shape:
-    " " : "　"
+    " " : " "
     "," : "，"
     "." : "。"
     ";" : "；"

@@ -184,7 +184,12 @@ async function initLangPage() {
       const r = await window.nativeClassifyLang(v);
       saveBtn.textContent = orig;
       if (!r || r.startsWith("error:")) {
-        toast("分类失败：" + (r ? r.slice(6) : "未知错误"), "error");
+        const msg = r ? r.slice(6) : "未知错误";
+        toast("分类失败：" + msg, "error");
+        // No API key → jump to 模型配置 so the user can fix it right away.
+        if (msg.indexOf("API key") >= 0 || msg.indexOf("401") >= 0) {
+          setTimeout(() => showPage("model"), 600);
+        }
         return;  // keep old lang.txt, don't write a bad value
       }
       const cat = r.trim().toUpperCase();
@@ -193,7 +198,7 @@ async function initLangPage() {
         return;
       }
       await window.nativeWriteLang(cat + ":" + v);
-      toast("已保存（" + cat + "）", "ok");
+      toast("已保存", "ok");
       // Stay open — user may want to make more changes. They close with X.
     } catch (e) {
       toast("保存失败：" + (e && e.message || e), "error");

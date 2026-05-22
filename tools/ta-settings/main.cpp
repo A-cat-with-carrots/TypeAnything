@@ -161,11 +161,18 @@ static std::string HttpsPost(const std::string& host, const std::string& path,
   std::wstring whost = Utf8ToWide(h);
   std::wstring wpath = Utf8ToWide(path.empty() ? "/v1/chat/completions" : path);
 
+  // NO_PROXY default access — AUTOMATIC_PROXY does WPAD auto-detect which
+  // can hang for many seconds on some networks. We talk to a public HTTPS
+  // endpoint; if a corporate proxy is required the user's WinINET settings
+  // still apply via the system default, but we avoid the WPAD stall.
   HINTERNET hSession = WinHttpOpen(L"TypeAnything-Classifier/1.0",
-                                   WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                                   WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                    WINHTTP_NO_PROXY_NAME,
                                    WINHTTP_NO_PROXY_BYPASS, 0);
   if (!hSession) return fail("WinHttpOpen failed");
+  // Bounded timeouts (ms): resolve / connect / send / receive. Prevents the
+  // call from hanging forever (the "分类中…" stuck-forever bug).
+  WinHttpSetTimeouts(hSession, 5000, 8000, 10000, 15000);
   HINTERNET hConnect = WinHttpConnect(hSession, whost.c_str(),
                                       INTERNET_DEFAULT_HTTPS_PORT, 0);
   if (!hConnect) { WinHttpCloseHandle(hSession); return fail("WinHttpConnect failed"); }
@@ -636,8 +643,8 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   w.set_title("TypeAnything");
   // Same dimensions for both pages — user switches between them via the
   // top tab nav, so the window size shouldn't jump.
-  w.set_size(700, 800, WEBVIEW_HINT_NONE);
-  w.set_size(560, 580, WEBVIEW_HINT_MIN);
+  w.set_size(700, 810, WEBVIEW_HINT_NONE);
+  w.set_size(560, 600, WEBVIEW_HINT_MIN);
 
   // ─── Native bridge ────────────────────────────────────────
   w.bind("nativeReadLang", [](const std::string& /*args*/) -> std::string {
@@ -717,49 +724,53 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   });
 
   // Classify a free-form / chip target into A/B/C/D via one LLM call.
-  // Returns the single letter on success, or "error:<msg>" so the UI can
-  // surface failures instead of silently mis-routing.
-  w.bind("nativeClassifyLang", [](const std::string& args) -> std::string {
-    auto parts = ParseJsonStringArray(args);
-    if (parts.empty()) return "error:empty target";
-    std::string target = parts[0];
+  // ASYNC: the HTTP request must NOT block the webview UI thread (a sync
+  // bind doing WinHTTP froze the panel on "分类中…" forever). We spawn a
+  // worker thread and resolve(seq) when done. Result is a JSON string
+  // value: "A"/"B"/"C"/"D" on success, or "error:<msg>".
+  w.bind("nativeClassifyLang",
+    [&w](const std::string& seq, const std::string& req, void* /*arg*/) {
+      std::thread([&w, seq, req]() {
+        auto done = [&](const std::string& s) {
+          w.resolve(seq, 0, "\"" + JsonEscape(s) + "\"");
+        };
+        auto parts = ParseJsonStringArray(req);
+        if (parts.empty()) { done("error:empty target"); return; }
+        std::string target = parts[0];
 
-    // Read provider config from schema.yaml.
-    std::string yaml = ReadAllUtf8(SchemaFilePath());
-    std::string apikey = ExtractYamlField(yaml, "api_key");
-    std::string model  = ExtractYamlField(yaml, "model");
-    std::string host   = ExtractYamlField(yaml, "host");
-    std::string path   = ExtractYamlField(yaml, "path");
-    if (model.empty()) model = "deepseek-chat";
-    if (host.empty())  host  = "api.deepseek.com";
-    if (path.empty())  path  = "/v1/chat/completions";
-    if (apikey.empty()) return "error:API key 未配置（先到模型配置填入）";
+        std::string yaml = ReadAllUtf8(SchemaFilePath());
+        std::string apikey = ExtractYamlField(yaml, "api_key");
+        std::string model  = ExtractYamlField(yaml, "model");
+        std::string host   = ExtractYamlField(yaml, "host");
+        std::string path   = ExtractYamlField(yaml, "path");
+        if (model.empty()) model = "deepseek-chat";
+        if (host.empty())  host  = "api.deepseek.com";
+        if (path.empty())  path  = "/v1/chat/completions";
+        if (apikey.empty()) { done("error:API key 未配置"); return; }
 
-    std::string classify = ReadPromptSection("CLASSIFY");
-    if (classify.empty())
-      return "error:分类 prompt 缺失（typeanything_prompts.txt）";
-    classify = ReplaceAllStr(classify, "{TARGET}", target);
+        std::string classify = ReadPromptSection("CLASSIFY");
+        if (classify.empty()) { done("error:分类 prompt 缺失（typeanything_prompts.txt）"); return; }
+        classify = ReplaceAllStr(classify, "{TARGET}", target);
 
-    std::ostringstream payload;
-    payload << "{\"model\":\"" << JsonEscape(model) << "\","
-            << "\"temperature\":0,"
-            << "\"max_tokens\":4,"
-            << "\"messages\":["
-            << "{\"role\":\"system\",\"content\":\"" << JsonEscape(classify) << "\"},"
-            << "{\"role\":\"user\",\"content\":\"" << JsonEscape(target) << "\"}]}";
+        std::ostringstream payload;
+        payload << "{\"model\":\"" << JsonEscape(model) << "\","
+                << "\"temperature\":0,"
+                << "\"max_tokens\":4,"
+                << "\"messages\":["
+                << "{\"role\":\"system\",\"content\":\"" << JsonEscape(classify) << "\"},"
+                << "{\"role\":\"user\",\"content\":\"" << JsonEscape(target) << "\"}]}";
 
-    std::string err;
-    std::string resp = HttpsPost(host, path, apikey, payload.str(), &err);
-    if (resp.empty()) return "error:" + (err.empty() ? "网络失败" : err);
+        std::string err;
+        std::string resp = HttpsPost(host, path, apikey, payload.str(), &err);
+        if (resp.empty()) { done("error:" + (err.empty() ? "网络失败" : err)); return; }
 
-    std::string content = ExtractContent(resp);
-    // Fallback: first A/B/C/D char wins.
-    for (char c : content) {
-      if (c == 'A' || c == 'B' || c == 'C' || c == 'D')
-        return std::string(1, c);
-    }
-    return "error:分类返回无法解析（" + content.substr(0, 20) + "）";
-  });
+        std::string content = ExtractContent(resp);
+        for (char c : content) {
+          if (c == 'A' || c == 'B' || c == 'C' || c == 'D') { done(std::string(1, c)); return; }
+        }
+        done("error:分类返回无法解析（" + content.substr(0, 20) + "）");
+      }).detach();
+    }, nullptr);
 
   w.bind("nativeOpenUrl", [](const std::string& args) -> std::string {
     auto parts = ParseJsonStringArray(args);
