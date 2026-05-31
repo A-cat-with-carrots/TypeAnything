@@ -122,12 +122,15 @@ Klingon battle prose / 火星文 / Spanish chilango / Cockney slang
 │  spawn worker thread (Chinese 仍可见 ~1s)           │
 │   ↓                                                 │
 │  WinHttpPost → AI provider chat/completions API     │
-│   payload = professional translator prompt          │
+│   payload = 4 类专用 prompt 之一 (A/B/C/D)           │
 │           + 你的目标 (任意自然语言描述)              │
 │           + 「你好」                                 │
 │   （默认连 DeepSeek，可在 schema yaml 改 OpenAI/...）│
 │   target_lang ← %APPDATA%\Rime\typeanything_       │
-│                  lang.txt (托盘菜单写入)             │
+│                  lang.txt 内容 "X:name"             │
+│                  X ∈ {A 自然语种, B 中式风格,        │
+│                       C 跨语种, D 暗语}              │
+│                  保存时由 LLM 一次性分类             │
 └─────────────────────────────────────────────────────┘
                       ↓ ~1s 后 LLM 返回
 ┌─ 静默替换 ──────────────────────────────────────────┐
@@ -222,7 +225,7 @@ cd ..\ta-installer
 检查更新  (U)   ← 打开 GitHub Releases 页
 ```
 
-两项核心交互都由 `ta-settings.exe`（独立 WebView2 应用）承载，**不再走 PowerShell / WinForms**。深色 Fluent 设计沿用 [type.hrdai.cn](https://type.hrdai.cn) 品牌：teal `#15212a` 底 / 金 `#d4b27a` accent / Noto Serif SC 中文衬线 / Inter 英文 sans。
+两项核心交互都由 `ta-settings.exe`（独立 WebView2 应用）承载，**不再走 PowerShell / WinForms**。v0.7.3 起改为 GitHub 蓝白配色：`#FAFBFC` 底 / `#0969DA` accent / `#1F2328` 主文字 / `#57606A` 次文字 / `#D0D7DE` 分割线。
 
 ### 切换风格
 
@@ -367,7 +370,29 @@ typeanything:
 
 ## 版本历史
 
-### v0.6.5（当前）
+### v0.7.3（当前）
+- **蓝白配色**：设置面板从暖灰咖（Claude 风）改为 GitHub 蓝白 — `#FAFBFC` 底 / `#0969DA` accent / `#1F2328` 主文字 / `#57606A` 次文字
+- **托盘菜单光标修复**：「切换风格」「模型配置」「检查更新」hover 时不再变为左右双向箭头（owner 窗口 `WNDCLASSEX.hCursor = NULL` → `LoadCursor(NULL, IDC_ARROW)`）
+- **仓库路径迁移**：build 脚本 + `installer.rc` 跟随 `aiForType/` → `products/TypeAnything/`
+
+### v0.7.2
+- **异步分类**：「切换风格」保存时调用 LLM 分类，从同步阻塞改为 std::thread + webview `resolve(seq, ...)` 异步，UI 不再卡在「分类中…」
+- **WinHTTP 超时 + DEFAULT_PROXY**：`WinHttpSetTimeouts(5s, 8s, 10s, 15s)` + 跳过 WPAD 代理探测，避免无网络场景下分类挂死
+- **API key 未配置自动跳转**：保存时若分类返回 401 / "API key" 错误，600ms 后自动切到「模型配置」tab + 弹错误 toast
+- **半角空格**：中文模式下空格从全角 `　` (U+3000) 改为半角 ` `（schema yaml `" " : " "`）
+- **UX 收尾**：保存 toast 改用 accent 色（之前是绿色）+ 文案统一为「已保存」（不再带分类）+ tab 标题加粗 + 窗口高度 810
+
+### v0.7.1
+- **issue #1 修复**：bundle OpenCC `t2s.json` + `TSPhrases.ocd2` + `TSCharacters.ocd2` 到安装资源 — 修「繁体输出 + 候选窗为空」 bug。schema 的 `simplifier@simplification_filter` 依赖 OpenCC 字典，缺失时整条候选生成链路报错
+- **死配置清理**：从 schema translators 列表移除 `reverse_lookup_translator`（从 luna_pinyin 模板继承的死配置，无对应 `reverse_lookup` 配置块）
+
+### v0.7.0
+- **4 类提示词路由 + 保存时分类**：风格描述在用户保存时由 LLM 分类到 4 类（A=自然语种 / B=中式风格 / C=跨语种 / D=暗语编码），打上 `X:name` 前缀写入 `lang.txt`。Enter 触发翻译时 processor 按前缀挑对应专用 prompt — 比通用 prompt 翻译质量提升（avg eval 6.5 → 8.2），LLM 调用 5× 便宜
+- **运行时 prompts 文件**：4 个 category prompt + 1 个 classify prompt 拆到 `%APPDATA%\Rime\typeanything_prompts.txt`（UTF-8），改 prompt 不再需要 librime 重 build；同时解决 MSVC cp936 源码字符集问题
+- **40 chip 提示词重做**：基于 4 类架构重写 chip 列表，砍 11 低价值 chip + 加 10 高频 chip（如港片黑帮 / 知乎大佬腔 / 鲁迅式中文）+ 3 个改名
+- **Claude UI 风格**：设置面板从 hrdai dark editorial 改为 Claude 暖灰咖（v0.7.3 又改为蓝白）
+
+### v0.6.5
 - **冷装修复**：installer cold-register TSF + bundle luna_pinyin 全套数据 + 安装失败真报错（不再 silent 100%）+ 写开始菜单 `TypeAnything.lnk → WeaselServer.exe`
 - **WeaselServer 跑 MEDIUM IL**（`CreateProcessWithTokenW` + explorer token）让 IME 在普通应用（Notepad / 微信 / Chrome / Word）正常工作，pipe ACL 不再被拒
 - **设置面板单实例 + tab 切换 + 强制置顶**：托盘点「切换风格」/「模型配置」复用现有窗口，`AttachThreadInput` 技巧绕过 SetForegroundWindow 限制
