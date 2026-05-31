@@ -5,17 +5,17 @@
 
 :root {
   color-scheme: light;
-  --bg:        #FAF9F5;
-  --bg-deep:   #F0EEE6;
+  --bg:        #FAFBFC;
+  --bg-deep:   #F0F3F7;
   --panel:     #FFFFFF;
-  --panel-2:   #F0EEE6;
-  --ink:       #1F1E1D;
-  --muted:     #73706B;
+  --panel-2:   #F0F3F7;
+  --ink:       #1F2328;
+  --muted:     #57606A;
   --green:     #5a9b78;
   --blue:      #5b89b3;
-  --accent:    #D97757;            /* Claude clay */
-  --line:      #E5E2D9;
-  --line-soft: #EDEBE3;
+  --accent:    #0969DA;            /* GitHub blue */
+  --line:      #D0D7DE;
+  --line-soft: #E4E8EC;
   --radius:    14px;
   --radius-sm: 10px;
   --radius-pill: 999px;
@@ -40,9 +40,9 @@ html, body {
   line-height: 1.55;
   color: var(--ink);
   background:
-    radial-gradient(circle at 80% 18%, rgba(217, 119, 87, 0.05), transparent 22rem),
-    radial-gradient(circle at 18% 82%, rgba(217, 119, 87, 0.06), transparent 24rem),
-    linear-gradient(180deg, #FAF9F5, #FAF9F5 62%, #F0EEE6);
+    radial-gradient(circle at 80% 18%, rgba(9, 105, 218, 0.05), transparent 22rem),
+    radial-gradient(circle at 18% 82%, rgba(9, 105, 218, 0.06), transparent 24rem),
+    linear-gradient(180deg, #FAFBFC, #FAFBFC 62%, #F0F3F7);
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
@@ -60,7 +60,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(rgba(31, 30, 29, 0.02) 1px, transparent 1px);
+  background: linear-gradient(rgba(31, 35, 40, 0.02) 1px, transparent 1px);
   background-size: 100% 6px;
   opacity: 0.5;
   z-index: 0;
@@ -76,7 +76,7 @@ body::before {
   justify-content: space-between;
   padding: 0 6px 0 18px;
   border-bottom: 1px solid var(--line);
-  background: rgba(250, 249, 245, 0.72);
+  background: rgba(250, 251, 252, 0.72);
   backdrop-filter: blur(14px);
   -webkit-app-region: drag;
   app-region: drag;
@@ -110,7 +110,7 @@ body::before {
   position: relative;
   width: 34px; height: 18px;
   margin: 0;
-  background: rgba(31, 30, 29, 0.18);
+  background: rgba(31, 35, 40, 0.18);
   border-radius: 999px;
   cursor: pointer;
   transition: background 0.18s;
@@ -184,7 +184,7 @@ main.pure-locked .page {
 .form-grid input::placeholder { color: var(--muted); opacity: 0.55; }
 .form-grid input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.18);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.18);
 }
 .form-grid .masked { position: relative; }
 .form-grid .masked input { padding-right: 38px; }
@@ -198,7 +198,7 @@ main.pure-locked .page {
   border-radius: 6px; font-size: 13px;
 }
 .form-grid .masked .toggle:hover {
-  background: rgba(217, 119, 87, 0.10);
+  background: rgba(9, 105, 218, 0.10);
   color: var(--accent);
 }
 .endpoint-preview {
@@ -208,7 +208,7 @@ main.pure-locked .page {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--muted);
-  background: rgba(31, 30, 29, 0.03);
+  background: rgba(31, 35, 40, 0.03);
   border: 1px dashed var(--line-soft);
   border-radius: 6px;
   word-break: break-all;
@@ -315,13 +315,13 @@ main {
 
 main::-webkit-scrollbar { width: 10px; }
 main::-webkit-scrollbar-thumb {
-  background: rgba(31, 30, 29, 0.18);
+  background: rgba(31, 35, 40, 0.18);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 main::-webkit-scrollbar-thumb:hover {
-  background: rgba(31, 30, 29, 0.32);
+  background: rgba(31, 35, 40, 0.32);
   background-clip: content-box;
 }
 
@@ -382,7 +382,7 @@ h1 .accent { color: var(--accent); }
 .input-wrap input::placeholder { color: var(--muted); opacity: 0.7; }
 .input-wrap input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.18);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.18);
 }
 
 /* ─── Category groups ───────────────────────────────────────────── */
@@ -463,9 +463,9 @@ h1 .accent { color: var(--accent); }
   border-color: var(--accent);
 }
 .btn.primary:hover {
-  background: #C2603F;
-  border-color: #C2603F;
-  box-shadow: 0 4px 14px rgba(217, 119, 87, 0.32);
+  background: #0550AE;
+  border-color: #0550AE;
+  box-shadow: 0 4px 14px rgba(9, 105, 218, 0.32);
 }
 .btn:disabled {
   opacity: 0.5;
@@ -505,7 +505,7 @@ h1 .accent { color: var(--accent); }
 .preset.active {
   border-color: var(--accent);
   color: var(--ink);
-  background: rgba(217, 119, 87, 0.10);
+  background: rgba(9, 105, 218, 0.10);
 }
 /* The preset that the runtime is actually using (the one currently saved
    in schema.yaml). Solid gold fill so the user can tell which provider is
@@ -554,7 +554,7 @@ h1 .accent { color: var(--accent); }
 .form input::placeholder { color: var(--muted); opacity: 0.5; }
 .form input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.18);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.18);
 }
 
 .masked { position: relative; width: 100%; }
@@ -572,7 +572,7 @@ h1 .accent { color: var(--accent); }
   font-size: 14px;
   transition: all 0.12s;
 }
-.masked .toggle:hover { background: rgba(217, 119, 87, 0.10); color: var(--accent); }
+.masked .toggle:hover { background: rgba(9, 105, 218, 0.10); color: var(--accent); }
 
 .hint {
   grid-column: 2 / -1;
@@ -584,7 +584,7 @@ h1 .accent { color: var(--accent); }
 .hint a {
   color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px dashed rgba(217, 119, 87, 0.5);
+  border-bottom: 1px dashed rgba(9, 105, 218, 0.5);
   padding-bottom: 1px;
 }
 .hint a:hover { border-bottom-style: solid; }
@@ -621,7 +621,7 @@ h1 .accent { color: var(--accent); }
   color: #FFFFFF;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  box-shadow: 0 24px 60px rgba(31, 30, 29, 0.18);
+  box-shadow: 0 24px 60px rgba(31, 35, 40, 0.18);
   opacity: 0;
   transition: all 0.26s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
@@ -632,4 +632,4 @@ h1 .accent { color: var(--accent); }
   transform: translateX(-50%) translateY(0);
 }
 .toast.ok    { background: var(--accent); color: #FFFFFF; }
-.toast.error { background: #C2603F; color: #FFFFFF; }
+.toast.error { background: #D1242F; color: #FFFFFF; }
