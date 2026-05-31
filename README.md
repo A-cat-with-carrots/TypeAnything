@@ -452,9 +452,6 @@ typeanything:
 重点方向：
 - **macOS port** — 用 squirrel 框架，复用我们的 typeanything plugin
 - **Linux port** — 用 ibus-rime 或 fcitx-rime
-- **流式翻译** — LLM streaming API → 边翻边显示
-- **错误 toast** — API 失败时托盘气泡提示
-- **风格 preset 库** — 内建几十种圈层风格 prompt template
 - **离线 fallback** — 本地小 model 兜底
 
 PR 前请阅 `third_party/weasel/librime/plugins/typeanything/src/typeanything_processor.cc` 了解核心翻译/替换链路。
