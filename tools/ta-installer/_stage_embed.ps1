@@ -2,21 +2,21 @@
 # Run before xmake build.
 
 $ErrorActionPreference = "Stop"
-$here = "D:\hrdai\aiForType\tools\ta-installer"
+$here = "D:\hrdai\products\TypeAnything\tools\ta-installer"
 $embed = Join-Path $here "embed"
 
 if (Test-Path $embed) { Remove-Item -Recurse -Force $embed }
 New-Item -ItemType Directory -Force -Path $embed,"$embed\target-ui","$embed\install-ui" | Out-Null
 
 # 1. Weasel binaries
-$buildBin = "D:\hrdai\aiForType\third_party\weasel\build\windows\x64\release"
-Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\dist\lib\rime.dll" "$embed\rime.dll"
+$buildBin = "D:\hrdai\products\TypeAnything\third_party\weasel\build\windows\x64\release"
+Copy-Item "D:\hrdai\products\TypeAnything\third_party\weasel\librime\dist\lib\rime.dll" "$embed\rime.dll"
 Copy-Item "$buildBin\WeaselTSF\weaselx64.dll"           "$embed\weaselx64.dll"
 Copy-Item "$buildBin\WeaselServer\WeaselServer.exe"     "$embed\WeaselServer.exe"
 Copy-Item "$buildBin\WeaselDeployer\WeaselDeployer.exe" "$embed\WeaselDeployer.exe"
 
 # 2. ta-settings.exe + loader
-$taBin = "D:\hrdai\aiForType\tools\ta-settings\build\windows\x64\release"
+$taBin = "D:\hrdai\products\TypeAnything\tools\ta-settings\build\windows\x64\release"
 Copy-Item "$taBin\ta-settings.exe"     "$embed\ta-settings.exe"
 Copy-Item "$taBin\WebView2Loader.dll"  "$embed\WebView2Loader.dll"
 
@@ -31,16 +31,16 @@ foreach ($f in "index.html","style.css","app.js","fish.png") {
 }
 
 # 5. schema yaml template + supplement dict (modern AI/IT/slang terms)
-Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.schema.yaml" `
+Copy-Item "D:\hrdai\products\TypeAnything\third_party\weasel\librime\plugins\typeanything\schema\typeanything.schema.yaml" `
           "$embed\typeanything.schema.yaml"
-Copy-Item "D:\hrdai\aiForType\third_party\weasel\librime\plugins\typeanything\schema\typeanything.dict.yaml" `
+Copy-Item "D:\hrdai\products\TypeAnything\third_party\weasel\librime\plugins\typeanything\schema\typeanything.dict.yaml" `
           "$embed\typeanything.dict.yaml"
 
 # 6. Rime base data — required on cold machines (no prior Weasel install).
 #    Prefer the installed Weasel data dir (has key_bindings/punctuation that
 #    librime/data/minimal/ lacks). Fall back to minimal/ for files missing.
 $pfData = "C:\Program Files\Rime\weasel-0.17.4\data"
-$minData = "D:\hrdai\aiForType\third_party\weasel\librime\data\minimal"
+$minData = "D:\hrdai\products\TypeAnything\third_party\weasel\librime\data\minimal"
 function StageDataFile($name) {
     $pf  = Join-Path $pfData $name
     $min = Join-Path $minData $name

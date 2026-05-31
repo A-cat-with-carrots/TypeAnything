@@ -138,7 +138,11 @@ ATOM CSystemTray::RegisterClass(HINSTANCE hInstance) {
   wcex.cbWndExtra = 0;
   wcex.hInstance = hInstance;
   wcex.hIcon = 0;
-  wcex.hCursor = 0;
+  // Must NOT be NULL — when this hidden window owns the popup menu (via
+  // TrackPopupMenu), WM_SETCURSOR over menu items falls back to this class
+  // cursor. NULL → undefined cursor, often inheriting the resize-arrow
+  // from a neighboring window edge the cursor passed over.
+  wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
   wcex.hbrBackground = 0;
   wcex.lpszMenuName = 0;
   wcex.lpszClassName = TRAYICON_CLASS;

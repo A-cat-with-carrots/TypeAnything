@@ -6,7 +6,7 @@
 #   3. Output: build\windows\x64\release\ta-installer.exe.
 
 $ErrorActionPreference = "Stop"
-Set-Location "D:\hrdai\aiForType\tools\ta-installer"
+Set-Location "D:\hrdai\products\TypeAnything\tools\ta-installer"
 
 & "$PSScriptRoot\_stage_embed.ps1"
 

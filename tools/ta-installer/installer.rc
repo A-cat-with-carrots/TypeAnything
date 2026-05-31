@@ -6,48 +6,48 @@
 #include "resource.h"
 
 // UAC + DPI + UTF-8 manifest
-1 24 "D:\\hrdai\\aiForType\\tools\\ta-installer\\manifest.xml"
+1 24 "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\manifest.xml"
 
 // Window / taskbar icon
-1 ICON "D:\\hrdai\\aiForType\\tools\\ta-settings\\fish.ico"
+1 ICON "D:\\hrdai\\products\\TypeAnything\\tools\\ta-settings\\fish.ico"
 
 // ───── Bundled binaries ─────────────────────────────────────────
-IDR_RIME_DLL        RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\rime.dll"
-IDR_WEASELX64_DLL   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\weaselx64.dll"
-IDR_WEASELSERVER    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\WeaselServer.exe"
-IDR_WEASELDEPLOYER  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\WeaselDeployer.exe"
-IDR_TA_SETTINGS     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\ta-settings.exe"
-IDR_WV2_LOADER      RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\WebView2Loader.dll"
+IDR_RIME_DLL        RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\rime.dll"
+IDR_WEASELX64_DLL   RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\weaselx64.dll"
+IDR_WEASELSERVER    RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\WeaselServer.exe"
+IDR_WEASELDEPLOYER  RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\WeaselDeployer.exe"
+IDR_TA_SETTINGS     RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\ta-settings.exe"
+IDR_WV2_LOADER      RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\WebView2Loader.dll"
 
 // ───── ta-settings UI (gets copied to <install_dir>\ui\) ────────
-IDR_TARGET_UI_HTML  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\index.html"
-IDR_TARGET_UI_CSS   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\style.css"
-IDR_TARGET_UI_JS    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\app.js"
-IDR_TARGET_UI_PNG   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\target-ui\\fish.png"
+IDR_TARGET_UI_HTML  RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\target-ui\\index.html"
+IDR_TARGET_UI_CSS   RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\target-ui\\style.css"
+IDR_TARGET_UI_JS    RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\target-ui\\app.js"
+IDR_TARGET_UI_PNG   RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\target-ui\\fish.png"
 
 // ───── Schema yaml + supplement dict ────────────────────────────
-IDR_SCHEMA_YAML     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\typeanything.schema.yaml"
-IDR_DICT_YAML       RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\typeanything.dict.yaml"
+IDR_SCHEMA_YAML     RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\typeanything.schema.yaml"
+IDR_DICT_YAML       RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\typeanything.dict.yaml"
 
 // ───── Installer's own UI ───────────────────────────────────────
-IDR_INSTALL_HTML    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\index.html"
-IDR_INSTALL_CSS     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\style.css"
-IDR_INSTALL_JS      RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\app.js"
-IDR_INSTALL_PNG     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\install-ui\\fish.png"
+IDR_INSTALL_HTML    RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\install-ui\\index.html"
+IDR_INSTALL_CSS     RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\install-ui\\style.css"
+IDR_INSTALL_JS      RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\install-ui\\app.js"
+IDR_INSTALL_PNG     RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\install-ui\\fish.png"
 
 // ───── Rime base data (for cold-install) ────────────────────────
-IDR_DATA_DEFAULT       RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\default.yaml"
-IDR_DATA_LUNA_DICT     RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\luna_pinyin.dict.yaml"
-IDR_DATA_LUNA_SCHEMA   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\luna_pinyin.schema.yaml"
-IDR_DATA_ESSAY         RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\essay.txt"
-IDR_DATA_SYMBOLS       RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\symbols.yaml"
-IDR_DATA_PUNCTUATION   RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\punctuation.yaml"
-IDR_DATA_KEY_BINDINGS  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\key_bindings.yaml"
+IDR_DATA_DEFAULT       RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\default.yaml"
+IDR_DATA_LUNA_DICT     RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\luna_pinyin.dict.yaml"
+IDR_DATA_LUNA_SCHEMA   RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\luna_pinyin.schema.yaml"
+IDR_DATA_ESSAY         RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\essay.txt"
+IDR_DATA_SYMBOLS       RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\symbols.yaml"
+IDR_DATA_PUNCTUATION   RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\punctuation.yaml"
+IDR_DATA_KEY_BINDINGS  RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\key_bindings.yaml"
 
 // ───── Translate / classify prompts (UTF-8) ─────────────────────
-IDR_PROMPTS_TXT        RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\typeanything_prompts.txt"
+IDR_PROMPTS_TXT        RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\typeanything_prompts.txt"
 
 // ───── OpenCC t2s data (繁→简 simplifier) ───────────────────────
-IDR_OPENCC_T2S_JSON    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\opencc\\t2s.json"
-IDR_OPENCC_TS_PHRASES  RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\opencc\\TSPhrases.ocd2"
-IDR_OPENCC_TS_CHARS    RCDATA "D:\\hrdai\\aiForType\\tools\\ta-installer\\embed\\opencc\\TSCharacters.ocd2"
+IDR_OPENCC_T2S_JSON    RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\opencc\\t2s.json"
+IDR_OPENCC_TS_PHRASES  RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\opencc\\TSPhrases.ocd2"
+IDR_OPENCC_TS_CHARS    RCDATA "D:\\hrdai\\products\\TypeAnything\\tools\\ta-installer\\embed\\opencc\\TSCharacters.ocd2"

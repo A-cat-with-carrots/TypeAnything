@@ -1,7 +1,7 @@
 # Build ta-settings.exe (WebView2 UI for TypeAnything tray menu items).
 
 $ErrorActionPreference = "Stop"
-Set-Location "D:\hrdai\aiForType\tools\ta-settings"
+Set-Location "D:\hrdai\products\TypeAnything\tools\ta-settings"
 
 # Strip MSYS / mingw from PATH so xmake picks MSVC cl.exe
 $pathParts = $env:PATH -split ';' | Where-Object {
