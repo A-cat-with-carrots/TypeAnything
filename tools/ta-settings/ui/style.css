@@ -335,7 +335,7 @@ main {
   z-index: 1;
   flex: 1;
   overflow-y: auto;
-  padding: 22px 28px 28px;
+  padding: 22px 28px 44px;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -352,7 +352,12 @@ main::-webkit-scrollbar-thumb:hover {
   background-clip: content-box;
 }
 
-.page { animation: fade-in 0.22s ease-out; }
+.page {
+  animation: fade-in 0.22s ease-out;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
 .page[hidden] { display: none; }
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(6px); }
@@ -619,11 +624,8 @@ h1 .accent { color: var(--accent); }
 .actions {
   display: flex; gap: 10px;
   justify-content: flex-end;
-  padding-top: 4px;
-  /* Pushed to bottom of the page area via the flex layout below.
-     margin-bottom lifts the buttons one row above the page bottom edge. */
+  padding-top: 20px;
   margin-top: auto;
-  margin-bottom: 42px;
 }
 
 /* Make the model page a flex column so .actions auto-floats to the bottom
