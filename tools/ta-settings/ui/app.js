@@ -399,6 +399,12 @@ async function initModelPage() {
 
 // ─── Bootstrap ────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", async () => {
+  // Custom window controls (the OS title bar is stripped in MakeFrameless).
+  const wcMin = document.getElementById("wcMin");
+  const wcClose = document.getElementById("wcClose");
+  if (wcMin)   wcMin.addEventListener("click",   () => window.nativeMinimize?.());
+  if (wcClose) wcClose.addEventListener("click", () => window.nativeClose?.());
+
   // Always init both pages so user can swap freely. Lang init is cheap;
   // model init makes one nativeReadSchema call.
   await initLangPage();

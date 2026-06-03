@@ -262,6 +262,32 @@ main.pure-locked .page {
 }
 .x:hover { background: rgba(220, 60, 60, 0.85); color: #FFFFFF; }
 
+/* Custom window controls — replace the native min/close we strip in
+   the frameless setup. Cluster sits at the far right of the titlebar. */
+.window-controls {
+  display: flex;
+  margin-left: 8px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.wc {
+  width: 46px;
+  height: 42px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 80ms ease, color 80ms ease;
+}
+.wc:hover  { background: rgba(31, 35, 40, 0.06); color: var(--ink); }
+.wc:active { background: rgba(31, 35, 40, 0.12); }
+.wc-close:hover  { background: #D1242F; color: #fff; }
+.wc-close:active { background: #B91C26; }
+
 /* ─── Page tabs ──────────────────────────────────────────────────── */
 .page-tabs {
   display: flex;

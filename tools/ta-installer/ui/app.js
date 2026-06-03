@@ -90,6 +90,12 @@ async function startUninstall() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  // Custom window controls (we strip WS_CAPTION in MakeFrameless).
+  const wcMin = $("wcMin");
+  const wcClose = $("wcClose");
+  if (wcMin)   wcMin.addEventListener("click",   () => window.nativeMinimize?.());
+  if (wcClose) wcClose.addEventListener("click", () => window.nativeClose());
+
   $("btnSkip").addEventListener("click", () => window.nativeClose());
   $("btnOpenModel").addEventListener("click", async () => {
     try { await window.nativeOpenSettings("model"); } catch (e) {}

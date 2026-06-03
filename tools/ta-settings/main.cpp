@@ -20,6 +20,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <windowsx.h>   // GET_X_LPARAM / GET_Y_LPARAM (used in NCHITTEST)
 #include <shlobj.h>
 #include <shellapi.h>
 #include <dwmapi.h>
@@ -676,7 +677,39 @@ static void ApplyMica(HWND hwnd) {
 static WNDPROC g_original_wndproc = nullptr;
 static webview::webview* g_webview = nullptr;
 
+// Frameless titlebar geometry (must match .titlebar height in style.css and
+// .window-controls width = N * .wc width). Top strip is the drag region;
+// right cluster reserves WM_NCHITTEST → HTCLIENT so the custom min/close
+// buttons receive their own clicks.
+static const int kTitlebarHpx     = 42;
+static const int kBtnClusterWpx   = 100;
+
 static LRESULT CALLBACK TaSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+  // Frameless: claim the full window as client + custom hit-test the top
+  // strip for drag / the cluster for buttons / edges for resize.
+  if (msg == WM_NCCALCSIZE) {
+    if (wp == TRUE) return 0;
+  } else if (msg == WM_NCHITTEST) {
+    RECT rc; GetWindowRect(hwnd, &rc);
+    POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+    const int RESIZE = 6;
+    bool left   = pt.x <  rc.left  + RESIZE;
+    bool right  = pt.x >= rc.right - RESIZE;
+    bool top    = pt.y <  rc.top   + RESIZE;
+    bool bottom = pt.y >= rc.bottom - RESIZE;
+    if (top    && left)  return HTTOPLEFT;
+    if (top    && right) return HTTOPRIGHT;
+    if (bottom && left)  return HTBOTTOMLEFT;
+    if (bottom && right) return HTBOTTOMRIGHT;
+    if (left)   return HTLEFT;
+    if (right)  return HTRIGHT;
+    if (top)    return HTTOP;
+    if (bottom) return HTBOTTOM;
+    int titlebar_bottom = rc.top + kTitlebarHpx;
+    int btn_left_edge   = rc.right - kBtnClusterWpx;
+    if (pt.y < titlebar_bottom && pt.x < btn_left_edge) return HTCAPTION;
+    return HTCLIENT;
+  }
   if (msg == WM_TA_SHOWPAGE) {
     const char* pg = (wp == 1) ? "model" : "lang";
     if (g_webview) {
@@ -954,8 +987,12 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     return "true";
   });
 
-  // ─── Window setup + Mica ──────────────────────────────────
+  // ─── Window setup + Mica + frameless ──────────────────────
   HWND hwnd = (HWND)w.window();
+  w.bind("nativeMinimize", [hwnd](const std::string&) -> std::string {
+    ShowWindow(hwnd, SW_MINIMIZE);
+    return "true";
+  });
   ApplyMica(hwnd);
 
   // Single-instance: publish our HWND in a named file mapping so a
@@ -972,6 +1009,23 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   g_webview = &w;
   g_original_wndproc = (WNDPROC)SetWindowLongPtrW(
       hwnd, GWLP_WNDPROC, (LONG_PTR)TaSubclassProc);
+
+  // Frameless: strip OS title bar + system menu so the HTML titlebar owns
+  // the top edge. WS_THICKFRAME stays so the DWM shadow + Aero snap +
+  // resize border still work. TaSubclassProc handles WM_NCCALCSIZE and
+  // WM_NCHITTEST to make the client area cover the full window and
+  // route the top strip to HTCAPTION drag.
+  {
+    LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+    style &= ~(WS_CAPTION | WS_SYSMENU);
+    style |= WS_THICKFRAME | WS_MINIMIZEBOX;
+    SetWindowLongPtrW(hwnd, GWL_STYLE, style);
+    MARGINS m{0, 0, 1, 0};
+    DwmExtendFrameIntoClientArea(hwnd, &m);
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                 SWP_NOACTIVATE | SWP_FRAMECHANGED);
+  }
 
   // Force the new window to the foreground. When WeaselServer (MEDIUM IL,
   // possibly background) ShellExecutes us, the OS doesn't always grant

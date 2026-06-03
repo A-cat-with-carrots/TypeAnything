@@ -17,6 +17,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <windowsx.h>   // GET_X_LPARAM / GET_Y_LPARAM (used in NCHITTEST)
 #include <shlobj.h>
 #include <shellapi.h>
 #include <shobjidl.h>   // IFileOpenDialog (folder picker)
@@ -1558,7 +1559,7 @@ static void DoInstall(InstallOptions opts) {
                    " copy_ec=" + std::to_string(ec.value()));
 
     // 31. Add/Remove Programs entry.
-    WriteUninstallRegistry(wdir, L"0.7.5");
+    WriteUninstallRegistry(wdir, L"0.7.6");
     InstallLog("31. write Uninstall registry",
                "ok (HKLM\\...\\Uninstall\\TypeAnything)");
   }
@@ -1726,17 +1727,81 @@ static void ApplyMica(HWND hwnd) {
   int backdrop = DWMSBT_MAINWINDOW;
   DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
   // Light caption to match the blue-white body palette (v0.7.3+).
-  // Setting dark=TRUE produced a black title bar above the white app body.
   BOOL dark = FALSE;
   DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+}
 
-  // Hide the icon in the title bar (keeps the taskbar icon intact).
-  // WS_EX_DLGMODALFRAME tells the non-client renderer to skip the small
-  // class icon in the caption strip.
-  LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | WS_EX_DLGMODALFRAME);
-  SendMessageW(hwnd, WM_SETICON, ICON_SMALL, 0);
-  SendMessageW(hwnd, WM_SETICON, ICON_BIG, 0);
+// ─── Frameless / extended client (Claude / Spotify / VS Code style) ──
+//
+// We hide the OS title bar entirely and let the HTML titlebar own the top
+// edge: brand on the left, custom minimize/close buttons on the right,
+// the rest of the strip is a drag region. Body extends edge-to-edge with
+// no NC strip eating space.
+//
+// Implementation:
+//   1. Strip WS_CAPTION + WS_SYSMENU; keep WS_THICKFRAME for the resize
+//      border + drop shadow (DWM still draws the shadow as long as the
+//      window has a sizable frame).
+//   2. DwmExtendFrameIntoClientArea with a 1px top margin so DWM keeps
+//      the window shadow + corner rounding even though no caption is
+//      visible.
+//   3. WM_NCCALCSIZE wParam==TRUE → return 0. This tells DefWindowProc
+//      to leave the proposed rect alone, so the NC frame eats zero
+//      pixels and the HTML covers from y=0.
+//   4. WM_NCHITTEST: top 40px is HTCAPTION (drag), except a 100px-wide
+//      cluster on the right which stays HTCLIENT so the HTML close /
+//      min buttons receive their mouse events. 6px-wide window edges
+//      report HT* values for resize.
+
+namespace frameless {
+  static int titlebar_h_px      = 40;
+  static int btn_cluster_w_px   = 100;
+  static WNDPROC g_orig_wndproc = nullptr;
+
+  static LRESULT CALLBACK Subclass(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+      case WM_NCCALCSIZE: {
+        if (wp == TRUE) return 0;
+        break;
+      }
+      case WM_NCHITTEST: {
+        RECT rc; GetWindowRect(hwnd, &rc);
+        POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+        const int RESIZE = 6;
+        bool left   = pt.x <  rc.left  + RESIZE;
+        bool right  = pt.x >= rc.right - RESIZE;
+        bool top    = pt.y <  rc.top   + RESIZE;
+        bool bottom = pt.y >= rc.bottom - RESIZE;
+        if (top    && left)  return HTTOPLEFT;
+        if (top    && right) return HTTOPRIGHT;
+        if (bottom && left)  return HTBOTTOMLEFT;
+        if (bottom && right) return HTBOTTOMRIGHT;
+        if (left)   return HTLEFT;
+        if (right)  return HTRIGHT;
+        if (top)    return HTTOP;
+        if (bottom) return HTBOTTOM;
+        int titlebar_bottom = rc.top + titlebar_h_px;
+        int btn_left_edge   = rc.right - btn_cluster_w_px;
+        if (pt.y < titlebar_bottom && pt.x < btn_left_edge) return HTCAPTION;
+        return HTCLIENT;
+      }
+    }
+    return CallWindowProcW(g_orig_wndproc, hwnd, msg, wp, lp);
+  }
+}  // namespace frameless
+
+static void MakeFrameless(HWND hwnd) {
+  LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+  style &= ~(WS_CAPTION | WS_SYSMENU);
+  style |= WS_THICKFRAME | WS_MINIMIZEBOX;
+  SetWindowLongPtrW(hwnd, GWL_STYLE, style);
+
+  MARGINS m{0, 0, 1, 0};
+  DwmExtendFrameIntoClientArea(hwnd, &m);
+
+  frameless::g_orig_wndproc = (WNDPROC)SetWindowLongPtrW(
+      hwnd, GWLP_WNDPROC, (LONG_PTR)frameless::Subclass);
+
   SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
                SWP_NOACTIVATE | SWP_FRAMECHANGED);
@@ -1878,9 +1943,14 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int) {
     return "true";
   });
 
-  // Window + Mica.
+  // Window + Mica + frameless.
   HWND hwnd = (HWND)w.window();
+  w.bind("nativeMinimize", [hwnd](const std::string&) -> std::string {
+    ShowWindow(hwnd, SW_MINIMIZE);
+    return "true";
+  });
   ApplyMica(hwnd);
+  MakeFrameless(hwnd);
 
   // Progress pump: every 100ms drain g_progress.queue and forward to JS.
   std::atomic<bool> stop_pump{false};
