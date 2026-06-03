@@ -8,6 +8,10 @@
 #include <Shlobj.h>
 #include <KnownFolders.h>
 #include <thread>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
 
@@ -58,44 +62,170 @@ static std::wstring GetInstalledVersion() {
   return std::wstring(TA_VERSION);
 }
 
-// Minimal WinHTTP GET helper. Returns response body as UTF-8 string,
-// or empty on any failure. Supports HTTPS only.
-std::string HttpsGet(const std::wstring& host,
-                     const std::wstring& path,
-                     const wchar_t* user_agent,
-                     DWORD timeout_ms = 12000) {
+// Result of an HttpsGet call. `body` is UTF-8 response (empty on
+// transport-level failure). `status_code` is the HTTP status (0 if the
+// transport itself failed before a response was received). `error` is a
+// short human-readable description of any non-success condition.
+struct HttpsGetResult {
+  std::string body;
+  DWORD status_code = 0;
+  std::string error;
+};
+
+// Minimal WinHTTP GET helper. Returns body + HTTP status code so callers
+// can distinguish "GitHub returned a non-2xx response" (e.g. 403 rate
+// limit, 451 corp proxy block page) from "couldn't connect at all".
+HttpsGetResult HttpsGet(const std::wstring& host,
+                        const std::wstring& path,
+                        const wchar_t* user_agent,
+                        DWORD timeout_ms = 12000) {
+  HttpsGetResult r;
   HINTERNET hs = WinHttpOpen(user_agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                              WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-  if (!hs) return "";
+  if (!hs) { r.error = "WinHttpOpen failed"; return r; }
   WinHttpSetTimeouts(hs, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
   HINTERNET hc = WinHttpConnect(hs, host.c_str(),
                                 INTERNET_DEFAULT_HTTPS_PORT, 0);
-  if (!hc) { WinHttpCloseHandle(hs); return ""; }
+  if (!hc) { r.error = "WinHttpConnect failed"; WinHttpCloseHandle(hs); return r; }
   HINTERNET hr = WinHttpOpenRequest(hc, L"GET", path.c_str(), nullptr,
                                     WINHTTP_NO_REFERER,
                                     WINHTTP_DEFAULT_ACCEPT_TYPES,
                                     WINHTTP_FLAG_SECURE);
-  if (!hr) { WinHttpCloseHandle(hc); WinHttpCloseHandle(hs); return ""; }
+  if (!hr) { r.error = "WinHttpOpenRequest failed"; WinHttpCloseHandle(hc); WinHttpCloseHandle(hs); return r; }
   // GitHub API requires a User-Agent header (set via WinHttpOpen) and
   // accepts an Accept header for the v3 JSON content type.
   WinHttpAddRequestHeaders(hr, L"Accept: application/vnd.github+json",
                            (DWORD)-1L, WINHTTP_ADDREQ_FLAG_ADD);
-  std::string result;
   if (WinHttpSendRequest(hr, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
                          WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
       WinHttpReceiveResponse(hr, nullptr)) {
+    // Query HTTP status code.
+    DWORD sc = 0;
+    DWORD sc_sz = sizeof(sc);
+    if (WinHttpQueryHeaders(hr,
+                            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                            WINHTTP_HEADER_NAME_BY_INDEX, &sc, &sc_sz,
+                            WINHTTP_NO_HEADER_INDEX)) {
+      r.status_code = sc;
+    }
     DWORD avail = 0;
     while (WinHttpQueryDataAvailable(hr, &avail) && avail > 0) {
       std::vector<char> buf(avail);
       DWORD read = 0;
       if (!WinHttpReadData(hr, buf.data(), avail, &read)) break;
-      result.append(buf.data(), read);
+      r.body.append(buf.data(), read);
     }
+  } else {
+    DWORD e = GetLastError();
+    std::ostringstream oss;
+    oss << "WinHttp send/receive failed (GLE=" << e << ")";
+    r.error = oss.str();
   }
   WinHttpCloseHandle(hr);
   WinHttpCloseHandle(hc);
   WinHttpCloseHandle(hs);
-  return result;
+  return r;
+}
+
+// ─── Update-check log ────────────────────────────────────────────────
+//
+// Writes structured entries to %APPDATA%\Rime\typeanything_update.log so
+// users hitting issue #2 ("无法解析 GitHub 返回的版本信息") can attach a
+// log instead of guessing whether it was proxy/rate-limit/SSL.
+// Auto-rotates at 1 MB (renames to .1 overwriting any prior .1).
+static std::filesystem::path UpdateLogPath() {
+  PWSTR path_str = nullptr;
+  std::filesystem::path p;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL,
+                                     &path_str))) {
+    p = std::filesystem::path(path_str) / L"Rime" /
+        L"typeanything_update.log";
+    CoTaskMemFree(path_str);
+  } else {
+    p = L"typeanything_update.log";
+  }
+  return p;
+}
+
+// Strip CR/LF from a string so multi-line response bodies stay on a
+// single log line (matches the LOG FORMAT convention).
+static std::string SingleLine(const std::string& s) {
+  std::string out;
+  out.reserve(s.size());
+  for (char c : s) {
+    if (c == '\r' || c == '\n') out.push_back(' ');
+    else out.push_back(c);
+  }
+  return out;
+}
+
+// Truncate to `n` bytes, appending "…(truncated)" marker if cut.
+static std::string Truncate(const std::string& s, size_t n) {
+  if (s.size() <= n) return s;
+  return s.substr(0, n) + "…(truncated)";
+}
+
+// Current local time as "[YYYY-MM-DD HH:MM:SS]".
+static std::string NowStamp() {
+  auto t = std::chrono::system_clock::to_time_t(
+      std::chrono::system_clock::now());
+  std::tm tm{};
+  localtime_s(&tm, &t);
+  std::ostringstream oss;
+  oss << '[' << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << ']';
+  return oss.str();
+}
+
+// Append a structured entry to typeanything_update.log. Rotates the
+// file at 1 MB (rename to .1, overwriting prior .1).
+static void UpdateLog(const std::string& target,
+                      const std::wstring& host,
+                      const std::wstring& path,
+                      DWORD http_status,
+                      const std::string& response_body,
+                      const std::string& parsed,
+                      const std::string& result) {
+  std::filesystem::path lp = UpdateLogPath();
+  std::error_code ec;
+  std::filesystem::create_directories(lp.parent_path(), ec);
+
+  // Rotate at 1 MB.
+  auto sz = std::filesystem::file_size(lp, ec);
+  if (!ec && sz > 1024 * 1024) {
+    std::filesystem::path rotated = lp;
+    rotated += L".1";
+    std::filesystem::remove(rotated, ec);
+    std::filesystem::rename(lp, rotated, ec);
+  }
+
+  std::ofstream f(lp, std::ios::app | std::ios::binary);
+  if (!f) return;
+
+  auto wtoa = [](const std::wstring& w) -> std::string {
+    if (w.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(),
+                                nullptr, 0, nullptr, nullptr);
+    std::string s(n, 0);
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(),
+                        s.data(), n, nullptr, nullptr);
+    return s;
+  };
+
+  f << NowStamp() << " UPDATE_CHECK target=\"" << target << "\"\n";
+  f << "  host=" << wtoa(host) << " path=" << wtoa(path)
+    << " model=-\n";
+  f << "  http_status=" << http_status << "\n";
+  f << "  response[0..1000]="
+    << Truncate(SingleLine(response_body), 1000) << "\n";
+  f << "  parsed=" << parsed << "\n";
+  f << "  result=" << result << "\n";
+  f << "---\n";
+}
+
+// Format the user-facing path "%APPDATA%\Rime\typeanything_update.log"
+// for inclusion in MessageBox text and for ShellExecute on "view log".
+static std::wstring UpdateLogPathW() {
+  return UpdateLogPath().wstring();
 }
 
 // Streaming WinHTTP GET to a file. Returns true on success.
@@ -208,29 +338,60 @@ namespace {
 // in every host process for the duration of the HTTP call and dialog.
 // Return value is unused (the thread is detached); kept as bool only to
 // avoid touching every `return true;` site below.
+// Pop up the "GitHub error" modal with a hint pointing at the update
+// log and a "view log" button (IDYES) that opens it in notepad.
+static void ShowGitHubErrorDialog(const wchar_t* lead) {
+  std::wstring log_path = UpdateLogPathW();
+  std::wstring body =
+      std::wstring(lead) +
+      L"\n\n详情见:\n" + log_path +
+      L"\n\n常见原因：公司网络代理、GitHub API 限流、SSL 拦截。"
+      L"\n\n点击\"是\"查看日志，点击\"否\"关闭。";
+  int r = MessageBoxW(NULL, body.c_str(),
+                      L"TypeAnything 更新检查 — 查看日志？",
+                      MB_YESNO | MB_ICONWARNING | MB_TOPMOST |
+                          MB_SETFOREGROUND | MB_DEFBUTTON1);
+  if (r == IDYES) {
+    // Open the log in notepad. ShellExecute with verb=open on a .log
+    // file resolves to the user's default text editor (usually notepad).
+    ShellExecuteW(NULL, L"open", L"notepad.exe", log_path.c_str(), NULL,
+                  SW_SHOWNORMAL);
+  }
+}
+
 bool check_update_worker() {
   const wchar_t* UA = L"TypeAnything-Updater/1.0";
   const wchar_t* HOST = L"api.github.com";
   const wchar_t* PATH =
       L"/repos/A-cat-with-carrots/TypeAnything/releases/latest";
 
-  std::string body = HttpsGet(HOST, PATH, UA);
-  if (body.empty()) {
-    MessageBoxW(NULL,
-                L"无法连接 GitHub。请检查网络后重试。",
-                L"TypeAnything 更新检查",
-                MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
+  HttpsGetResult resp = HttpsGet(HOST, PATH, UA);
+  if (resp.body.empty()) {
+    // Transport failure OR empty body. Either way no JSON to parse.
+    std::string err = resp.error.empty()
+                          ? std::string("empty response body")
+                          : resp.error;
+    UpdateLog("check_update", HOST, PATH, resp.status_code, resp.body,
+              "-", "network failure: " + err);
+    ShowGitHubErrorDialog(L"无法连接 GitHub。请检查网络后重试。");
     return true;
   }
 
-  std::string tag = JsonStringField(body, "tag_name");
-  std::string dl_url = JsonStringField(body, "browser_download_url");
-  std::string release_name = JsonStringField(body, "name");
+  std::string tag = JsonStringField(resp.body, "tag_name");
+  std::string dl_url = JsonStringField(resp.body, "browser_download_url");
+  std::string release_name = JsonStringField(resp.body, "name");
   if (tag.empty() || dl_url.empty()) {
-    MessageBoxW(NULL,
-                L"无法解析 GitHub 返回的版本信息。",
-                L"TypeAnything 更新检查",
-                MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
+    std::string parsed = "tag_name=\"" + tag +
+                         "\" browser_download_url=\"" + dl_url +
+                         "\" name=\"" + release_name + "\"";
+    std::ostringstream res;
+    res << "parse failure: missing "
+        << (tag.empty() ? "tag_name " : "")
+        << (dl_url.empty() ? "browser_download_url " : "")
+        << "(http_status=" << resp.status_code << ")";
+    UpdateLog("check_update", HOST, PATH, resp.status_code, resp.body,
+              parsed, res.str());
+    ShowGitHubErrorDialog(L"无法解析 GitHub 返回的版本信息。");
     return true;
   }
 
@@ -246,12 +407,22 @@ bool check_update_worker() {
                         cur.data(), n, nullptr, nullptr);
   }
 
+  std::string parsed = "tag_name=\"" + tag +
+                       "\" browser_download_url=\"" + dl_url +
+                       "\" name=\"" + release_name + "\" current=\"" +
+                       cur + "\"";
+
   if (CompareVersion(tag, cur) <= 0) {
+    UpdateLog("check_update", HOST, PATH, resp.status_code, resp.body,
+              parsed, "up to date (" + cur + ")");
     std::wstring msg = L"已是最新版本（" + wcur + L"）。";
     MessageBoxW(NULL, msg.c_str(), L"TypeAnything 更新检查",
                 MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
     return true;
   }
+
+  UpdateLog("check_update", HOST, PATH, resp.status_code, resp.body,
+            parsed, "update available " + tag);
 
   // Build prompt text: latest tag + release name (if any).
   auto toWide = [](const std::string& s) {

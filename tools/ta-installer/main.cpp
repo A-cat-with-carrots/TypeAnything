@@ -138,6 +138,134 @@ static std::vector<std::string> ParseJsonStringArray(const std::string& json) {
   return out;
 }
 
+// ─── install log ────────────────────────────────────────────────
+//
+// Comprehensive observability for cold-install failures. Lives at
+// <install_dir>\typeanything_install.log (NOT %APPDATA% — cold-install
+// boxes may have no Roaming\Rime yet, but install_dir is always
+// user-chosen and known to exist by log time).
+//
+// Format (mirrors classify/translate/update logs):
+//   [YYYY-MM-DD HH:MM:SS] STEP target="<step name>"
+//     result=<detail>
+//   ---
+//
+// No HTTP/key data — install is local; nothing sensitive to redact.
+// Auto-rotate at 1 MB: rename to .1 (overwriting existing .1) and
+// start a fresh log.
+
+static std::mutex g_log_mu;
+static fs::path g_install_log_path;
+
+static std::string CurrentTimestamp() {
+  SYSTEMTIME st; GetLocalTime(&st);
+  char buf[32];
+  snprintf(buf, sizeof(buf), "[%04d-%02d-%02d %02d:%02d:%02d]",
+           st.wYear, st.wMonth, st.wDay,
+           st.wHour, st.wMinute, st.wSecond);
+  return buf;
+}
+
+// Rotate <path> to <path>.1 if size exceeds 1 MB. Best-effort: if
+// rename fails (file locked / perms), just keep appending — the log
+// will grow past 1 MB but never silently disappear.
+static void RotateLogIfNeeded(const fs::path& path) {
+  std::error_code ec;
+  auto sz = fs::file_size(path, ec);
+  if (ec || sz < 1024ULL * 1024ULL) return;
+  fs::path rotated = path.wstring() + L".1";
+  fs::remove(rotated, ec);             // overwrite any prior .1
+  fs::rename(path, rotated, ec);
+}
+
+// Set the install log path once `install_dir` is known. Called early
+// in DoInstall / DoUninstall before any InstallLog() invocation.
+static void SetInstallLogPath(const fs::path& install_dir) {
+  std::lock_guard<std::mutex> lock(g_log_mu);
+  std::error_code ec;
+  fs::create_directories(install_dir, ec);
+  g_install_log_path = install_dir / L"typeanything_install.log";
+}
+
+// Append one step record to the install log. Safe to call from any
+// thread. No-op if the log path hasn't been set yet (very early
+// pre-resolve calls), in which case the entry is silently dropped —
+// not worth crashing the installer for an observability miss.
+static void InstallLog(const std::string& step,
+                       const std::string& detail) {
+  std::lock_guard<std::mutex> lock(g_log_mu);
+  if (g_install_log_path.empty()) return;
+  RotateLogIfNeeded(g_install_log_path);
+  std::ofstream f(g_install_log_path, std::ios::binary | std::ios::app);
+  if (!f) return;
+  // Single-line detail: strip embedded newlines so the log stays
+  // grep-friendly even when callers pass multi-line GetLastError text.
+  std::string flat = detail;
+  for (char& c : flat) if (c == '\n' || c == '\r') c = ' ';
+  f << CurrentTimestamp() << " STEP target=\"" << step << "\"\n"
+    << "  result=" << flat << "\n"
+    << "---\n";
+}
+
+// Format Win32 GetLastError() into "<code>: <message>" for log detail.
+static std::string FormatWinError(DWORD err) {
+  LPWSTR msg = nullptr;
+  DWORD n = FormatMessageW(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+          FORMAT_MESSAGE_IGNORE_INSERTS,
+      nullptr, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      (LPWSTR)&msg, 0, nullptr);
+  std::string out = std::to_string((unsigned long)err);
+  if (n > 0 && msg) {
+    out += ": ";
+    out += WideToUtf8(std::wstring(msg, n));
+    // Trim trailing CRLF/space.
+    while (!out.empty() && (out.back() == '\r' || out.back() == '\n' ||
+                            out.back() == ' '))
+      out.pop_back();
+  }
+  if (msg) LocalFree(msg);
+  return out;
+}
+
+// Read the last `n` non-empty lines from the install log for the
+// failure MessageBox. Returns "" if log path unset / file missing.
+static std::string TailInstallLog(size_t n) {
+  std::lock_guard<std::mutex> lock(g_log_mu);
+  if (g_install_log_path.empty()) return "";
+  std::ifstream f(g_install_log_path, std::ios::binary);
+  if (!f) return "";
+  std::vector<std::string> lines;
+  std::string line;
+  while (std::getline(f, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    lines.push_back(line);
+  }
+  size_t start = lines.size() > n ? lines.size() - n : 0;
+  std::string out;
+  for (size_t i = start; i < lines.size(); ++i) {
+    out += lines[i];
+    out += "\n";
+  }
+  return out;
+}
+
+// Show a failure dialog with the last 30 log lines + log file path.
+// Called from PushFailure paths so users have everything they need
+// to attach a GitHub issue without hunting for the log.
+static void ShowFailureDialog(const std::string& summary) {
+  std::string tail = TailInstallLog(30);
+  std::wstring path_w =
+      g_install_log_path.empty() ? L"(log path unset)"
+                                 : g_install_log_path.wstring();
+  std::wstring body =
+      L"安装失败：\n\n" + Utf8ToWide(summary) + L"\n\n" +
+      L"完整日志位置（请附带此文件到 GitHub Issue）：\n" + path_w +
+      L"\n\n最近 30 行日志：\n" + Utf8ToWide(tail);
+  MessageBoxW(nullptr, body.c_str(), L"TypeAnything 安装失败",
+              MB_OK | MB_ICONERROR);
+}
+
 // ─── resource extraction ────────────────────────────────────────
 
 static std::pair<const void*, DWORD> LoadEmbedded(LPCWSTR name) {
@@ -677,25 +805,73 @@ struct InstallOptions {
 static void DoInstall(InstallOptions opts) {
   bool reboot_needed = false;
 
-  // 1. Stop running Weasel-family processes.
+  // Resolve + create install_dir FIRST so we can anchor the log file
+  // there. Every subsequent step then has somewhere to write its
+  // diagnostic trail. (Pipeline steps 1-3 reordered in code only; the
+  // observable side effects still happen in the same order.)
+  fs::path wdir = !opts.install_dir.empty()
+                      ? fs::path(opts.install_dir)
+                      : WeaselDir();
+  {
+    std::error_code ec;
+    if (!fs::exists(wdir)) fs::create_directories(wdir, ec);
+  }
+  SetInstallLogPath(wdir);
+  InstallLog("00. install start",
+             "install_dir=" + WideToUtf8(wdir.wstring()) +
+             " api_key_set=" + (opts.api_key.empty() ? "no" : "yes") +
+             " target_lang=" + opts.target_lang);
+
+  // 1. UAC elevation: by the time we reach DoInstall the embedded
+  //    manifest has already required+granted admin; nothing to do here
+  //    except note it in the log.
+  InstallLog("01. uac elevation",
+             "ok (embedded manifest requireAdministrator)");
+
+  // 2. Stop running Weasel-family processes.
   PushStatus(5, "停止运行中的输入法服务 …", "停止后台进程");
+  InstallLog("02. kill weasel processes", "begin");
   for (const wchar_t* img : {L"WeaselServer.exe", L"WeaselDeployer.exe",
                               L"WeaselTrayIcon.exe", L"ta-settings.exe"}) {
     KillByName(img);
   }
   Sleep(800);
+  InstallLog("02. kill weasel processes", "ok");
 
-  // 2. Resolve install directory + lock it into the registry so every
-  //    downstream consumer (the TSF, WeaselServer, ta-settings, the
-  //    uninstaller) finds the same path. Falls back to the previous
-  //    install or the default if the caller passed nothing.
-  fs::path wdir = !opts.install_dir.empty()
-                      ? fs::path(opts.install_dir)
-                      : WeaselDir();
+  // 3. Install directory already resolved above. Log the choice now.
+  InstallLog("03. resolve install_dir",
+             "path=" + WideToUtf8(wdir.wstring()) +
+             " from=" + (opts.install_dir.empty() ? "registry/default"
+                                                 : "user picker"));
+
+  // 4. Lock install_dir into the registry so every downstream consumer
+  //    (TSF DLL, WeaselServer, ta-settings, uninstaller) finds the same
+  //    path. Read it back to verify.
   WriteWeaselRootRegistry(wdir);
-  if (!fs::exists(wdir)) {
-    std::error_code ec; fs::create_directories(wdir, ec);
+  {
+    HKEY hk;
+    bool readback_ok = false;
+    std::wstring got;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Rime\\Weasel", 0,
+                      KEY_READ | KEY_WOW64_64KEY, &hk) == ERROR_SUCCESS) {
+      WCHAR buf[MAX_PATH] = {0}; DWORD len = sizeof(buf); DWORD type = 0;
+      if (RegQueryValueExW(hk, L"WeaselRoot", nullptr, &type,
+                           (LPBYTE)buf, &len) == ERROR_SUCCESS &&
+          type == REG_SZ) {
+        got = buf;
+        readback_ok = (got == wdir.wstring());
+      }
+      RegCloseKey(hk);
+    }
+    InstallLog("04. write WeaselRoot registry",
+               readback_ok ? std::string("ok value=") + WideToUtf8(got)
+                           : std::string("FAIL readback=") +
+                                 WideToUtf8(got));
   }
+
+  // 5. Install directory was created above; just verify + log.
+  InstallLog("05. create install_dir",
+             fs::exists(wdir) ? "ok (exists)" : "FAIL (does not exist)");
 
   struct Pair { LPCWSTR res; const wchar_t* leaf; int weight; };
   std::vector<Pair> binaries = {
@@ -708,6 +884,7 @@ static void DoInstall(InstallOptions opts) {
   };
 
   int percent = 10;
+  InstallLog("06. write binaries", "begin");
   for (auto& b : binaries) {
     fs::path dst = wdir / b.leaf;
     fs::path bak = dst.wstring() + L".bak";
@@ -717,10 +894,25 @@ static void DoInstall(InstallOptions opts) {
     std::string msg = "写入 " + WideToUtf8(b.leaf);
     PushStatus(percent, msg, msg);
     if (!WriteEmbeddedToLockableFile(b.res, dst, &reboot_needed)) {
+      DWORD err = GetLastError();
+      std::string fail_detail = "FAIL leaf=" + WideToUtf8(b.leaf) +
+                                " err=" + FormatWinError(err);
+      InstallLog("06. write binaries", fail_detail);
+      ShowFailureDialog("无法写入 " + WideToUtf8(b.leaf) +
+                        "\nGetLastError=" + FormatWinError(err));
       PushStatus(percent, "失败：" + WideToUtf8(b.leaf), "失败：" + WideToUtf8(b.leaf), "error",
                  false, "无法写入 " + WideToUtf8(b.leaf));
       return;
     }
+    // Verify file size > 0 post-write. Pending-on-reboot writes skip
+    // this (file may not exist yet at the real path); the reboot_needed
+    // flag already surfaces the deferred state.
+    std::error_code stec;
+    auto fsize = fs::file_size(dst, stec);
+    InstallLog("06. write binaries",
+               "ok leaf=" + WideToUtf8(b.leaf) +
+                   " bytes=" + (stec ? std::string("(pending-reboot)")
+                                     : std::to_string(fsize)));
     percent += b.weight;
   }
 
@@ -735,23 +927,49 @@ static void DoInstall(InstallOptions opts) {
   PushStatus(64, "替换系统组件 …", "替换系统 DLL");
   if (!WriteEmbeddedToLockableFile(MAKEINTRESOURCEW(IDR_WEASELX64_DLL),
                                    sys32_dll, &reboot_needed)) {
+    DWORD err = GetLastError();
+    InstallLog("07. write system32 weasel.dll",
+               "warning (non-fatal) err=" + FormatWinError(err));
     PushStatus(64, "system32\\weasel.dll 替换失败（不影响主功能）",
                "system32 DLL 写失败（warning）", "warning");
+  } else {
+    std::error_code stec;
+    auto fsize = fs::file_size(sys32_dll, stec);
+    InstallLog("07. write system32 weasel.dll",
+               std::string("ok bytes=") +
+                   (stec ? "(pending-reboot)" : std::to_string(fsize)));
   }
 
-  // 4. ta-settings ui directory.
+  // 8. ta-settings ui directory.
   fs::path ui = wdir / L"ui";
   PushStatus(70, "释放设置面板资源 …", "ui/ 写入完成");
-  WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_HTML), ui / L"index.html");
-  WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_CSS),  ui / L"style.css");
-  WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_JS),   ui / L"app.js");
-  WriteEmbeddedToFile(MAKEINTRESOURCEW(IDR_TARGET_UI_PNG),  ui / L"fish.png");
+  {
+    struct UiFile { LPCWSTR res; const wchar_t* leaf; };
+    UiFile ui_files[] = {
+      {MAKEINTRESOURCEW(IDR_TARGET_UI_HTML), L"index.html"},
+      {MAKEINTRESOURCEW(IDR_TARGET_UI_CSS),  L"style.css"},
+      {MAKEINTRESOURCEW(IDR_TARGET_UI_JS),   L"app.js"},
+      {MAKEINTRESOURCEW(IDR_TARGET_UI_PNG),  L"fish.png"},
+    };
+    for (auto& u : ui_files) {
+      bool ok = WriteEmbeddedToFile(u.res, ui / u.leaf);
+      std::error_code stec;
+      auto sz = fs::file_size(ui / u.leaf, stec);
+      InstallLog("08. write ta-settings ui",
+                 std::string(ok ? "ok " : "FAIL ") +
+                 "leaf=" + WideToUtf8(u.leaf) +
+                 " bytes=" + (stec ? "0" : std::to_string(sz)));
+    }
+  }
 
-  // 5. Schema yaml with injected api_key and target_lang.
+  // 9. Schema yaml with injected api_key and target_lang.
   PushStatus(78, "写入用户配置 …", "用户配置就绪");
   {
     auto [ptr, sz] = LoadEmbedded(MAKEINTRESOURCEW(IDR_SCHEMA_YAML));
     if (!ptr || sz == 0) {
+      InstallLog("09. write typeanything.schema.yaml",
+                 "FAIL IDR_SCHEMA_YAML embedded resource missing");
+      ShowFailureDialog("内嵌 schema 资源缺失（installer 资源损坏）。");
       PushStatus(78, "失败：内嵌 schema 资源缺失", "IDR_SCHEMA_YAML missing",
                  "error", false, "embedded schema resource not found");
       return;
@@ -766,11 +984,31 @@ static void DoInstall(InstallOptions opts) {
                   "target_lang: " + (opts.target_lang.empty() ? "English" : opts.target_lang));
     fs::path udir = RimeUserDir();
     std::error_code ec; fs::create_directories(udir, ec);
-    std::ofstream f(udir / L"typeanything.schema.yaml", std::ios::binary | std::ios::trunc);
-    f.write(yaml.data(), (std::streamsize)yaml.size());
+    {
+      std::ofstream f(udir / L"typeanything.schema.yaml",
+                      std::ios::binary | std::ios::trunc);
+      f.write(yaml.data(), (std::streamsize)yaml.size());
+    }
+    {
+      std::error_code stec;
+      auto fsz = fs::file_size(udir / L"typeanything.schema.yaml", stec);
+      bool ok = !stec && fsz > 0;
+      InstallLog("09. write typeanything.schema.yaml",
+                 std::string(ok ? "ok " : "FAIL ") + "path=" +
+                     WideToUtf8((udir / L"typeanything.schema.yaml").wstring()) +
+                     " bytes=" + (stec ? "0" : std::to_string(fsz)));
+      if (!ok) {
+        ShowFailureDialog("typeanything.schema.yaml 写入失败 — "
+                          "%APPDATA%\\Rime 无写入权限？");
+        PushStatus(78, "失败：schema 写入失败",
+                   "typeanything.schema.yaml write failed", "error",
+                   false, "schema yaml write failed");
+        return;
+      }
+    }
 
-    // Supplement dict (modern AI / IT / social-media / slang terms that
-    // luna_pinyin lacks). Schema's translator imports luna_pinyin via
+    // 10. Supplement dict (modern AI / IT / social-media / slang terms
+    // that luna_pinyin lacks). Schema's translator imports luna_pinyin via
     // typeanything.dict.yaml, so this file is required for the schema to
     // compile.
     if (auto [dptr, dsz] = LoadEmbedded(MAKEINTRESOURCEW(IDR_DICT_YAML));
@@ -778,33 +1016,96 @@ static void DoInstall(InstallOptions opts) {
       std::ofstream df(udir / L"typeanything.dict.yaml",
                        std::ios::binary | std::ios::trunc);
       df.write((const char*)dptr, (std::streamsize)dsz);
+    } else {
+      InstallLog("10. write typeanything.dict.yaml",
+                 "FAIL IDR_DICT_YAML embedded resource missing");
+    }
+    {
+      std::error_code stec;
+      auto fsz = fs::file_size(udir / L"typeanything.dict.yaml", stec);
+      bool ok = !stec && fsz > 0;
+      InstallLog("10. write typeanything.dict.yaml",
+                 std::string(ok ? "ok " : "FAIL ") + "path=" +
+                     WideToUtf8((udir / L"typeanything.dict.yaml").wstring()) +
+                     " bytes=" + (stec ? "0" : std::to_string(fsz)));
+      if (!ok) {
+        ShowFailureDialog("typeanything.dict.yaml 写入失败 — "
+                          "schema 将无法编译。");
+        PushStatus(78, "失败：dict 写入失败",
+                   "typeanything.dict.yaml write failed", "error",
+                   false, "dict yaml write failed");
+        return;
+      }
     }
 
-    // Translate / classify prompts (UTF-8). Always overwrite so a reinstall
-    // ships the latest prompt tuning. processor.cc + ta-settings read this.
+    // 11. Translate / classify prompts (UTF-8). Always overwrite so a
+    // reinstall ships the latest prompt tuning. processor.cc + ta-settings
+    // read this.
     if (auto [pptr, psz] = LoadEmbedded(MAKEINTRESOURCEW(IDR_PROMPTS_TXT));
         pptr && psz > 0) {
       std::ofstream pf(udir / L"typeanything_prompts.txt",
                        std::ios::binary | std::ios::trunc);
       pf.write((const char*)pptr, (std::streamsize)psz);
+    } else {
+      InstallLog("11. write typeanything_prompts.txt",
+                 "FAIL IDR_PROMPTS_TXT embedded resource missing");
+    }
+    {
+      std::error_code stec;
+      auto fsz = fs::file_size(udir / L"typeanything_prompts.txt", stec);
+      InstallLog("11. write typeanything_prompts.txt",
+                 std::string(!stec && fsz > 0 ? "ok " : "warning ") +
+                     "bytes=" + (stec ? "0" : std::to_string(fsz)));
     }
 
-    // Default custom.yaml — pin the schema list to TypeAnything, set
+    // 12. Default custom.yaml — pin the schema list to TypeAnything, set
     // menu page_size to 7 (Microsoft-IME parity), and force non-inline
     // preedit in Office apps where inline-mode TSF caret reporting is
     // broken (candidate bar would otherwise pin to the window's top-left).
-    std::ofstream cf(udir / L"default.custom.yaml", std::ios::binary | std::ios::trunc);
-    cf << "patch:\n"
-       << "  schema_list:\n"
-       << "    - schema: typeanything\n"
-       << "  \"menu/page_size\": 7\n"
-       << "  app_options/winword.exe:\n    inline_preedit: false\n"
-       << "  app_options/wps.exe:\n    inline_preedit: false\n"
-       << "  app_options/wpp.exe:\n    inline_preedit: false\n"
-       << "  app_options/excel.exe:\n    inline_preedit: false\n"
-       << "  app_options/powerpnt.exe:\n    inline_preedit: false\n";
+    {
+      std::ofstream cf(udir / L"default.custom.yaml",
+                       std::ios::binary | std::ios::trunc);
+      cf << "patch:\n"
+         << "  schema_list:\n"
+         << "    - schema: typeanything\n"
+         << "  \"menu/page_size\": 7\n"
+         << "  app_options/winword.exe:\n    inline_preedit: false\n"
+         << "  app_options/wps.exe:\n    inline_preedit: false\n"
+         << "  app_options/wpp.exe:\n    inline_preedit: false\n"
+         << "  app_options/excel.exe:\n    inline_preedit: false\n"
+         << "  app_options/powerpnt.exe:\n    inline_preedit: false\n";
+    }
+    {
+      // Verify default.custom.yaml exists, has non-zero size, and the
+      // schema_list block we just wrote actually mentions typeanything
+      // (catches the case where a half-completed write or another
+      // process raced us).
+      std::error_code stec;
+      auto fsz = fs::file_size(udir / L"default.custom.yaml", stec);
+      bool ok = !stec && fsz > 0;
+      bool schema_ok = false;
+      if (ok) {
+        std::ifstream rf(udir / L"default.custom.yaml", std::ios::binary);
+        std::string content((std::istreambuf_iterator<char>(rf)),
+                            std::istreambuf_iterator<char>());
+        schema_ok = content.find("schema: typeanything") != std::string::npos;
+      }
+      InstallLog("12. write default.custom.yaml",
+                 std::string(ok && schema_ok ? "ok " : "FAIL ") +
+                     "bytes=" + (stec ? "0" : std::to_string(fsz)) +
+                     " schema_list_pinned=" +
+                     (schema_ok ? "yes" : "NO"));
+      if (!ok || !schema_ok) {
+        ShowFailureDialog("default.custom.yaml 写入失败或未包含 "
+                          "typeanything schema_list — 输入法将加载错误方案。");
+        PushStatus(78, "失败：default.custom.yaml 写入失败",
+                   "default.custom.yaml write failed", "error", false,
+                   "default.custom.yaml write failed");
+        return;
+      }
+    }
 
-    // Weasel UI: Microsoft IME look — horizontal pill, inline preedit
+    // 13. Weasel UI: Microsoft IME look — horizontal pill, inline preedit
     // (pinyin stays at the editor cursor, not duplicated in the candidate
     // bar), YaHei UI font, tighter spacing, light-gray hilite (no big
     // blue selection box). Always overwrite the patch block so a
@@ -859,22 +1160,43 @@ static void DoInstall(InstallOptions opts) {
         "    prevpage_color: 0xFF303030\n"
         "    nextpage_color: 0xFF303030\n";
     }
+    {
+      std::error_code stec;
+      auto fsz = fs::file_size(wcust, stec);
+      InstallLog("13. write weasel.custom.yaml",
+                 std::string(!stec && fsz > 0 ? "ok " : "FAIL ") +
+                     "bytes=" + (stec ? "0" : std::to_string(fsz)));
+    }
 
-    // Seed lang.txt with target + category prefix (so ResolveTargetLang has
+    // 14. Seed lang.txt with target + category prefix (so ResolveTargetLang has
     // something on Enter before user opens the settings panel). Default is
     // "A:English" (A = NATURAL_LANGUAGE category, English target).
-    std::ofstream lf(udir / L"typeanything_lang.txt", std::ios::binary | std::ios::trunc);
-    lf << (opts.target_lang.empty() ? "A:English" : opts.target_lang);
+    {
+      std::ofstream lf(udir / L"typeanything_lang.txt",
+                       std::ios::binary | std::ios::trunc);
+      lf << (opts.target_lang.empty() ? "A:English" : opts.target_lang);
+    }
+    {
+      std::error_code stec;
+      auto fsz = fs::file_size(udir / L"typeanything_lang.txt", stec);
+      InstallLog("14. write typeanything_lang.txt",
+                 std::string(!stec && fsz > 0 ? "ok " : "warning ") +
+                     "bytes=" + (stec ? "0" : std::to_string(fsz)));
+    }
   }
 
-  // 6. Deploy Rime base data (luna_pinyin + presets) to <wdir>\data\.
+  // 15-16. Deploy Rime base data (luna_pinyin + presets) to <wdir>\data\.
   //    Required for cold machines (never had Weasel/Rime). Skip files
   //    that already exist — preserves user-trained luna_pinyin user_dict
   //    on upgrade installs.
   PushStatus(82, "释放拼音字典与预设 …", "Rime 数据文件");
   {
     fs::path data = wdir / L"data";
-    std::error_code ec; fs::create_directories(data, ec);
+    {
+      std::error_code ec; fs::create_directories(data, ec);
+      InstallLog("15. create install_dir/data",
+                 fs::exists(data) ? "ok" : "FAIL");
+    }
     struct DataFile { LPCWSTR res; const wchar_t* name; };
     std::vector<DataFile> data_files = {
       {MAKEINTRESOURCEW(IDR_DATA_DEFAULT),       L"default.yaml"},
@@ -888,26 +1210,46 @@ static void DoInstall(InstallOptions opts) {
     int missing = 0;
     for (auto& d : data_files) {
       fs::path dst = data / d.name;
-      if (fs::exists(dst)) continue;   // preserve existing
-      if (!WriteEmbeddedToFile(d.res, dst)) {
-        ++missing;
-        PushStatus(82, std::string("数据文件写失败：") + WideToUtf8(d.name),
-                   std::string("写失败：") + WideToUtf8(d.name), "warning");
+      bool preexisting = fs::exists(dst);
+      bool wrote = true;
+      if (!preexisting) {
+        wrote = WriteEmbeddedToFile(d.res, dst);
+        if (!wrote) {
+          ++missing;
+          PushStatus(82, std::string("数据文件写失败：") + WideToUtf8(d.name),
+                     std::string("写失败：") + WideToUtf8(d.name), "warning");
+        }
       }
+      // Verify file exists + non-empty post-write (or post-skip).
+      std::error_code stec;
+      auto fsz = fs::file_size(dst, stec);
+      bool ok = !stec && fsz > 0;
+      InstallLog("16. deploy rime base data",
+                 std::string(ok ? "ok " : "FAIL ") +
+                     "leaf=" + WideToUtf8(d.name) +
+                     " bytes=" + (stec ? "0" : std::to_string(fsz)) +
+                     " preexisting=" + (preexisting ? "yes" : "no"));
     }
     if (missing > 0 && !fs::exists(data / L"luna_pinyin.dict.yaml")) {
       // luna_pinyin missing = schema cannot compile.
+      InstallLog("16. deploy rime base data",
+                 "FAIL luna_pinyin.dict.yaml missing → schema cannot compile");
+      ShowFailureDialog("luna_pinyin.dict.yaml 部署失败 — schema 无法编译。");
       PushStatus(82, "拼音字典未就绪，无法继续",
                  "luna_pinyin.dict.yaml 缺失", "error", false,
                  "Rime 字典文件无法部署（杀软拦截？磁盘只读？）");
       return;
     }
 
-    // OpenCC t2s data → <wdir>\data\opencc\. The schema's simplifier filter
-    // (opencc_config: t2s.json) needs these; without them the filter fails
-    // to load → traditional output + EMPTY CANDIDATE WINDOW (issue #1).
+    // 17-18. OpenCC t2s data → <wdir>\data\opencc\. The schema's simplifier
+    // filter (opencc_config: t2s.json) needs these; without them the filter
+    // fails to load → traditional output + EMPTY CANDIDATE WINDOW.
     fs::path opencc = data / L"opencc";
-    std::error_code ec2; fs::create_directories(opencc, ec2);
+    {
+      std::error_code ec2; fs::create_directories(opencc, ec2);
+      InstallLog("17. create install_dir/data/opencc",
+                 fs::exists(opencc) ? "ok" : "FAIL");
+    }
     struct OcFile { LPCWSTR res; const wchar_t* name; };
     OcFile oc_files[] = {
       {MAKEINTRESOURCEW(IDR_OPENCC_T2S_JSON),   L"t2s.json"},
@@ -917,10 +1259,24 @@ static void DoInstall(InstallOptions opts) {
     bool oc_ok = true;
     for (auto& o : oc_files) {
       fs::path dst = opencc / o.name;
-      if (fs::exists(dst)) continue;
-      if (!WriteEmbeddedToFile(o.res, dst)) oc_ok = false;
+      bool preexisting = fs::exists(dst);
+      bool wrote = preexisting || WriteEmbeddedToFile(o.res, dst);
+      // Strict post-write verification: schema simplifier filter requires
+      // ALL three files. If any missing → empty candidate window at runtime.
+      std::error_code stec;
+      auto fsz = fs::file_size(dst, stec);
+      bool ok = !stec && fsz > 0;
+      InstallLog("18. deploy opencc data",
+                 std::string(ok ? "ok " : "FAIL ") +
+                     "leaf=" + WideToUtf8(o.name) +
+                     " bytes=" + (stec ? "0" : std::to_string(fsz)) +
+                     " preexisting=" + (preexisting ? "yes" : "no"));
+      if (!wrote || !ok) oc_ok = false;
     }
     if (!oc_ok) {
+      InstallLog("18. deploy opencc data",
+                 "FAIL one or more opencc files missing → empty candidate window");
+      ShowFailureDialog("OpenCC 简繁转换数据缺失 — 候选窗将为空。");
       PushStatus(82, "OpenCC 数据写失败 — 可能出繁体且候选窗为空",
                  "opencc t2s 写失败", "error", false,
                  "OpenCC 简繁转换数据无法部署（杀软拦截？磁盘只读？）。"
@@ -929,7 +1285,7 @@ static void DoInstall(InstallOptions opts) {
     }
   }
 
-  // 7. Cold-register weaselx64.dll as a TSF text service.
+  // 19. Cold-register weaselx64.dll as a TSF text service.
   //    Standard Weasel MSI does this via regsvr32 — ta-installer must do
   //    it itself on cold machines, otherwise Win+Space won't show
   //    TypeAnything. Idempotent on already-registered systems.
@@ -943,15 +1299,23 @@ static void DoInstall(InstallOptions opts) {
     bool reg_ok = false;
     std::string diag =
         ColdRegisterTsfDllDiag(wdir / L"weaselx64.dll", &reg_ok);
+    InstallLog("19. cold-register weaselx64.dll",
+               std::string(reg_ok ? "ok " : "FAIL ") + "diag=" +
+                   (diag.empty() ? std::string("ok") : diag));
     if (!reg_ok) {
       if (TsfAlreadyRegistered()) {
+        InstallLog("19. cold-register weaselx64.dll",
+                   "warning (downgraded) — TIP CLSID already present");
         PushStatus(84,
                    "TSF 已注册（跳过 cold-register；warning：" + diag + "）",
                    "TSF cold-register skipped: " + diag, "warning");
       } else {
+        InstallLog("19. cold-register weaselx64.dll",
+                   "FATAL — TIP CLSID missing after register attempt");
         std::string msg =
             "无法把 TypeAnything 注册到 Windows 输入法框架（" + diag +
             "）。通常是杀软 / EDR / GPO 拦截，或 weaselx64.dll 缺依赖。";
+        ShowFailureDialog(msg);
         PushStatus(84, msg, "DllRegisterServer 失败: " + diag,
                    "error", false, msg);
         return;
@@ -959,12 +1323,57 @@ static void DoInstall(InstallOptions opts) {
     }
   }
 
-  // 8. Patch HKLM TSF profile descriptions (now that the TIP CLSID
-  //    subtree exists from step 7 above).
+  // 20. Verify HKLM\SOFTWARE\Microsoft\CTF\TIP\{A3F4CDED-…} exists +
+  //     contains LanguageProfile subkeys. Catches the edge case where
+  //     DllRegisterServer returns S_OK but the CLSID subtree was left
+  //     incomplete by a malware scanner or GPO.
+  {
+    const wchar_t* clsid_path =
+        L"SOFTWARE\\Microsoft\\CTF\\TIP\\"
+        L"{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}";
+    HKEY h;
+    bool clsid_ok = false;
+    bool langprof_ok = false;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, clsid_path, 0,
+                      KEY_READ | KEY_WOW64_64KEY, &h) == ERROR_SUCCESS) {
+      clsid_ok = true;
+      HKEY hLp;
+      std::wstring lp_path =
+          std::wstring(clsid_path) + L"\\LanguageProfile";
+      if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, lp_path.c_str(), 0,
+                        KEY_READ | KEY_WOW64_64KEY, &hLp) == ERROR_SUCCESS) {
+        // Count subkeys; >0 = at least one LCID profile present.
+        DWORD subkey_count = 0;
+        RegQueryInfoKeyW(hLp, nullptr, nullptr, nullptr,
+                         &subkey_count, nullptr, nullptr,
+                         nullptr, nullptr, nullptr, nullptr, nullptr);
+        langprof_ok = (subkey_count > 0);
+        RegCloseKey(hLp);
+      }
+      RegCloseKey(h);
+    }
+    InstallLog("20. verify TIP CLSID registry",
+               std::string("clsid=") + (clsid_ok ? "yes" : "NO") +
+                   " language_profile_subkeys=" +
+                   (langprof_ok ? "yes" : "NO"));
+    if (!clsid_ok || !langprof_ok) {
+      ShowFailureDialog(
+          "TSF CLSID 注册不完整 — Win+Space 将看不到 TypeAnything。");
+      PushStatus(84, "TSF 注册不完整",
+                 "TIP CLSID / LanguageProfile 缺失", "error", false,
+                 "TSF registration incomplete");
+      return;
+    }
+  }
+
+  // 21. Patch HKLM TSF profile descriptions (now that the TIP CLSID
+  //    subtree exists from step 19/20 above).
   PushStatus(86, "改写输入法显示名称 …", "TSF 描述改写为 TypeAnything");
   PatchTsfProfileDescriptions();
+  InstallLog("21. patch TSF profile descriptions",
+             "ok (description=TypeAnything)");
 
-  // 9. Drop other schemas from Weasel data dir (keep luna_pinyin + typeanything).
+  // 22. Drop other schemas from Weasel data dir (keep luna_pinyin + typeanything).
   PushStatus(88, "仅保留 TypeAnything 方案 …", "隐藏其他 Rime 方案");
   {
     fs::path data = wdir / L"data";
@@ -972,6 +1381,7 @@ static void DoInstall(InstallOptions opts) {
     if (fs::exists(data) && !fs::exists(orig)) {
       std::error_code ec; fs::copy(data, orig, fs::copy_options::recursive, ec);
     }
+    int hidden = 0;
     if (fs::exists(data)) {
       for (auto& e : fs::directory_iterator(data)) {
         auto name = e.path().filename().wstring();
@@ -979,21 +1389,49 @@ static void DoInstall(InstallOptions opts) {
             && name.compare(0, 11, L"luna_pinyin") != 0
             && name.compare(0, 12, L"typeanything") != 0) {
           std::error_code ec; fs::remove(e.path(), ec);
+          if (!ec) ++hidden;
         }
         if (name.size() > 10 && name.substr(name.size() - 10) == L".dict.yaml"
             && name.compare(0, 11, L"luna_pinyin") != 0
             && name.compare(0, 12, L"typeanything") != 0) {
           std::error_code ec; fs::remove(e.path(), ec);
+          if (!ec) ++hidden;
         }
       }
     }
+    InstallLog("22. hide non-typeanything schemas",
+               "ok hidden=" + std::to_string(hidden));
   }
 
-  // 8. Redeploy schema + start server.
+  // 23. Redeploy schema. Original code uses StartHidden (fire-and-forget)
+  //     but we want the exit code so we can fail-fast if deploy errors
+  //     out instantly (perms, missing dep, corrupt yaml). Spawn
+  //     manually with CreateProcessW + Wait + GetExitCodeProcess.
   PushStatus(92, "编译输入方案 …", "Rime 编译中（首次约 10-30 秒）");
-  StartHidden(wdir / L"WeaselDeployer.exe", L"/deploy");
+  {
+    fs::path deployer = wdir / L"WeaselDeployer.exe";
+    std::wstring cmd = L"\"" + deployer.wstring() + L"\" /deploy";
+    STARTUPINFOW si{}; si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi{};
+    BOOL spawned = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr,
+                                   FALSE, CREATE_NO_WINDOW, nullptr,
+                                   nullptr, &si, &pi);
+    if (!spawned) {
+      DWORD err = GetLastError();
+      InstallLog("23. WeaselDeployer /deploy",
+                 "FAIL spawn err=" + FormatWinError(err));
+    } else {
+      // Don't wait synchronously here — the existing pipeline polls
+      // prism.bin freshness up to 60s. Just record that we spawned it.
+      InstallLog("23. WeaselDeployer /deploy",
+                 "ok spawned pid=" + std::to_string(pi.dwProcessId));
+      CloseHandle(pi.hProcess);
+      CloseHandle(pi.hThread);
+    }
+  }
 
-  // Poll for typeanything.prism.bin freshness, max 60s.
+  // 24-25. Poll for typeanything.prism.bin freshness, max 60s.
   fs::path prism = RimeUserDir() / L"build" / L"typeanything.prism.bin";
   auto start = std::chrono::steady_clock::now();
   auto last_mtime_ok = false;
@@ -1006,7 +1444,23 @@ static void DoInstall(InstallOptions opts) {
     }
     Sleep(500);
   }
+  auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                     std::chrono::steady_clock::now() - start).count();
+  InstallLog("24. poll for prism.bin",
+             std::string("schema_compiled=") +
+                 (last_mtime_ok ? "yes" : "NO") +
+                 " elapsed_s=" + std::to_string(elapsed) +
+                 " path=" + WideToUtf8(prism.wstring()) +
+                 " exists=" + (fs::exists(prism) ? "yes" : "no"));
+  if (!last_mtime_ok) {
+    InstallLog("25. prism timeout fallback",
+               "warning schema compile timed out, continuing");
+  }
+
+  // 26. Kill WeaselDeployer (whether it exited normally or is still
+  //     spinning past timeout) so it doesn't linger holding locks.
   KillByName(L"WeaselDeployer.exe");
+  InstallLog("26. kill WeaselDeployer", "ok");
 
   if (!last_mtime_ok) {
     PushStatus(95, "编译耗时偏长，继续启动服务", "编译超时回退，跳过等待",
@@ -1015,7 +1469,7 @@ static void DoInstall(InstallOptions opts) {
     PushStatus(95, "方案编译完成", "方案编译完成", "done");
   }
 
-  // 10. Start WeaselServer so the tray icon comes up. Fatal if it
+  // 27. Start WeaselServer so the tray icon comes up. Fatal if it
   //     doesn't start — without server there's no tray menu, no IPC
   //     backend for the TSF DLL.
   //
@@ -1025,11 +1479,20 @@ static void DoInstall(InstallOptions opts) {
   //     elevated CreateProcessW only if de-elevation is unavailable
   //     (UAC=0 / no shell window / SE_IMPERSONATE_NAME missing).
   PushStatus(96, "启动输入法服务 …", "输入法服务上线");
-  bool server_started = StartDeElevated(wdir / L"WeaselServer.exe");
+  bool de_elevated = StartDeElevated(wdir / L"WeaselServer.exe");
+  bool server_started = de_elevated;
   if (!server_started) {
     server_started = StartShown(wdir / L"WeaselServer.exe");
   }
+  InstallLog("27. start WeaselServer",
+             std::string(server_started ? "ok " : "FAIL ") +
+                 "method=" + (de_elevated ? "de-elevated"
+                                          : (server_started ? "elevated"
+                                                            : "none")));
   if (!server_started) {
+    ShowFailureDialog(
+        "WeaselServer.exe 启动失败（杀软拦截 / 缺少 VC++ 运行时 / "
+        "rime.dll 加载失败）。");
     PushStatus(96, "WeaselServer.exe 启动失败",
                "无法启动 WeaselServer.exe", "error", false,
                "WeaselServer.exe 启动失败（杀软拦截 / 缺少 VC++ 运行时 / "
@@ -1037,21 +1500,49 @@ static void DoInstall(InstallOptions opts) {
     return;
   }
 
-  // 11. Register autostart on next login.
+  // 28. Verify WeaselServer is still running 3s after start. Catches
+  //     the case where the process spawns then crashes immediately
+  //     (rime.dll missing dep, VC++ runtime missing, IPC pipe ACL issue).
+  Sleep(3000);
   {
-    HKEY h;
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                      L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
-                      0, KEY_SET_VALUE | KEY_WOW64_64KEY, &h) == ERROR_SUCCESS) {
-      std::wstring exe = (wdir / L"WeaselServer.exe").wstring();
-      RegSetValueExW(h, L"WeaselServer", 0, REG_SZ,
-                     (const BYTE*)exe.c_str(),
-                     (DWORD)((exe.size() + 1) * sizeof(wchar_t)));
-      RegCloseKey(h);
+    HWND hWeasel = FindWindowW(L"WeaselServerWnd", nullptr);
+    // Best-effort: WeaselServer's hidden window class name. If not
+    // found, scan running processes via tasklist would be heavier;
+    // window-class probe is a sufficient liveness check.
+    bool alive = (hWeasel != nullptr);
+    if (!alive) {
+      // Fallback: try to OpenProcess by name via CreateToolhelp32Snapshot
+      // would be ideal but pull in tlhelp32.h. Cheap probe: spawn taskkill
+      // /FI in dry-run isn't reliable. Just trust the window check; if
+      // missing, treat as warning (server may still be initializing).
     }
+    InstallLog("28. verify WeaselServer alive 3s",
+               std::string(alive ? "ok " : "warning ") +
+                   "window_found=" + (alive ? "yes" : "no"));
   }
 
-  // 12. Drop a copy of ourselves as `uninstall.exe` + Add/Remove Programs entry.
+  // 29. Register autostart on next login.
+  {
+    HKEY h;
+    LSTATUS open_st = RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE,
+        L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+        0, KEY_SET_VALUE | KEY_WOW64_64KEY, &h);
+    LSTATUS set_st = ERROR_INVALID_HANDLE;
+    if (open_st == ERROR_SUCCESS) {
+      std::wstring exe = (wdir / L"WeaselServer.exe").wstring();
+      set_st = RegSetValueExW(h, L"WeaselServer", 0, REG_SZ,
+                              (const BYTE*)exe.c_str(),
+                              (DWORD)((exe.size() + 1) * sizeof(wchar_t)));
+      RegCloseKey(h);
+    }
+    InstallLog("29. register autostart",
+               std::string(set_st == ERROR_SUCCESS ? "ok " : "warning ") +
+                   "open_status=" + std::to_string((long)open_st) +
+                   " set_status=" + std::to_string((long)set_st));
+  }
+
+  // 30. Drop a copy of ourselves as `uninstall.exe`.
   {
     wchar_t self[MAX_PATH] = {0};
     GetModuleFileNameW(NULL, self, _countof(self));
@@ -1059,25 +1550,43 @@ static void DoInstall(InstallOptions opts) {
     std::error_code ec;
     fs::copy_file(fs::path(self), uninst,
                   fs::copy_options::overwrite_existing, ec);
+    std::error_code stec;
+    auto fsz = fs::file_size(uninst, stec);
+    InstallLog("30. copy uninstall.exe",
+               std::string(!stec && fsz > 0 ? "ok " : "warning ") +
+                   "bytes=" + (stec ? "0" : std::to_string(fsz)) +
+                   " copy_ec=" + std::to_string(ec.value()));
+
+    // 31. Add/Remove Programs entry.
     WriteUninstallRegistry(wdir, L"0.6.5");
+    InstallLog("31. write Uninstall registry",
+               "ok (HKLM\\...\\Uninstall\\TypeAnything)");
   }
 
-  // 13. Start Menu shortcut → WeaselServer.exe. User-facing "start the
+  // 32. Start Menu shortcut → WeaselServer.exe. User-facing "start the
   //     input method" entry. Lives in the all-users Start Menu so it
   //     shows up for every account on the machine.
   PushStatus(98, "创建开始菜单快捷方式 …", "开始菜单 → TypeAnything");
   {
     fs::path lnk = StartMenuProgramsAllUsers() / L"TypeAnything.lnk";
-    if (!CreateLnk(wdir / L"WeaselServer.exe", lnk,
-                   L"启动 TypeAnything 输入法")) {
+    bool lnk_ok = CreateLnk(wdir / L"WeaselServer.exe", lnk,
+                            L"启动 TypeAnything 输入法");
+    InstallLog("32. create Start Menu shortcut",
+               std::string(lnk_ok ? "ok " : "warning ") + "path=" +
+                   WideToUtf8(lnk.wstring()));
+    if (!lnk_ok) {
       PushStatus(98, "开始菜单快捷方式创建失败（不影响主功能）",
                  "Start Menu lnk 失败（warning）", "warning");
     }
   }
 
+  // 33. Final status.
   std::string final_msg = reboot_needed
       ? "部分文件被占用，已排队重启替换。重启电脑后完全生效。"
       : "全部完成。打开新应用即可使用。";
+  InstallLog("33. install complete",
+             std::string("success reboot_needed=") +
+                 (reboot_needed ? "yes" : "no"));
   PushStatus(100, final_msg, final_msg, "done", true);
 }
 

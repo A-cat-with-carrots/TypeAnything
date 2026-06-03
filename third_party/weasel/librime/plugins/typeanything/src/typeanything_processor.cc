@@ -29,6 +29,10 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#include <fstream>
+#include <mutex>
+#include <ctime>
+#include <filesystem>
 
 namespace typeanything {
 
@@ -176,7 +180,9 @@ std::string WinHttpPost(const std::wstring& host,
                         const std::wstring& path,
                         const std::string& bearer_token,
                         const std::string& body,
-                        DWORD timeout_ms = 15000) {
+                        DWORD timeout_ms = 15000,
+                        int* status_code = nullptr) {
+  if (status_code) *status_code = 0;
   HINTERNET h_session = WinHttpOpen(L"TypeAnything/1.0",
                                     WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                     WINHTTP_NO_PROXY_NAME,
@@ -210,6 +216,14 @@ std::string WinHttpPost(const std::wstring& host,
                                  (DWORD)body.size(), 0);
   std::string result;
   if (sent && WinHttpReceiveResponse(h_req, nullptr)) {
+    if (status_code) {
+      DWORD st = 0, slen = sizeof(st);
+      WinHttpQueryHeaders(h_req,
+                          WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                          WINHTTP_HEADER_NAME_BY_INDEX, &st, &slen,
+                          WINHTTP_NO_HEADER_INDEX);
+      *status_code = (int)st;
+    }
     DWORD avail = 0;
     while (WinHttpQueryDataAvailable(h_req, &avail) && avail > 0) {
       std::vector<char> buf(avail);
@@ -224,6 +238,101 @@ std::string WinHttpPost(const std::wstring& host,
   return result;
 }
 
+
+// ─── Translate log (best-effort, fire-and-forget) ────────────
+//
+// Writes %APPDATA%\Rime\typeanything_translate.log. Same format as the
+// classify log (see ta-settings/main.cpp). Critical: this runs in the IME
+// hot path — we MUST NOT block typing on disk I/O. The caller bundles all
+// fields into TranslateLogRec and dispatches a detached std::thread that
+// performs the write.
+
+struct TranslateLogRec {
+  std::string target_lang;       // resolved target language / freeform desc
+  char        category = 0;      // 'A'/'B'/'C'/'D' or 0 for legacy/fallback
+  std::string input_text;        // raw Chinese input (will be truncated)
+  std::string host;
+  std::string path;
+  std::string model;
+  int         http_status = 0;
+  std::string response;          // raw response body (will be truncated)
+  std::string output;            // extracted translation
+  std::string result;            // final outcome ("ok" / error message)
+  bool        send_input_ok = false;  // SendInput + clipboard succeeded
+};
+
+inline std::string TLogOneLine(const std::string& s) {
+  std::string r; r.reserve(s.size());
+  for (char c : s) { r.push_back((c == '\n' || c == '\r') ? ' ' : c); }
+  return r;
+}
+
+inline std::string TLogTruncate(const std::string& s, size_t limit,
+                                const char* suffix) {
+  if (s.size() <= limit) return s;
+  size_t cut = limit;
+  while (cut > 0 && ((unsigned char)s[cut] & 0xC0) == 0x80) --cut;
+  return s.substr(0, cut) + suffix;
+}
+
+inline std::string TLogTimestamp() {
+  std::time_t t = std::time(nullptr);
+  std::tm tm{};
+  localtime_s(&tm, &t);
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+  return buf;
+}
+
+inline std::filesystem::path TranslateLogPath() {
+  wchar_t appdata[MAX_PATH] = {0};
+  if (FAILED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appdata)))
+    return std::filesystem::path();
+  return std::filesystem::path(appdata) / L"Rime" / L"typeanything_translate.log";
+}
+
+// Append + rotate at 1 MB. Serialized via a static mutex. Best-effort: any
+// error (no AppData, file locked, etc.) is swallowed so the IME never trips.
+inline void TranslateLogWrite(const std::string& body) {
+  static std::mutex log_mu;
+  std::lock_guard<std::mutex> lk(log_mu);
+  auto p = TranslateLogPath();
+  if (p.empty()) return;
+  std::error_code ec;
+  std::filesystem::create_directories(p.parent_path(), ec);
+  uintmax_t sz = 0;
+  if (std::filesystem::exists(p, ec)) sz = std::filesystem::file_size(p, ec);
+  if (!ec && sz > 1024 * 1024) {
+    std::filesystem::path rot = p; rot += L".1";
+    std::filesystem::remove(rot, ec);
+    std::filesystem::rename(p, rot, ec);
+  }
+  std::ofstream f(p, std::ios::binary | std::ios::app);
+  if (!f.is_open()) return;
+  f.write(body.data(), (std::streamsize)body.size());
+}
+
+// Detached, fire-and-forget. Caller MUST NOT depend on completion.
+inline void TranslateLog(TranslateLogRec rec) {
+  std::thread([rec = std::move(rec)]() {
+    std::ostringstream o;
+    o << "[" << TLogTimestamp() << "] TRANSLATE target=\""
+      << TLogTruncate(TLogOneLine(rec.target_lang), 50, "...") << "\"\n"
+      << "  host=" << rec.host << " path=" << rec.path
+      << " model=" << rec.model << "\n"
+      << "  category=" << (rec.category ? std::string(1, rec.category) : std::string("-"))
+      << " input[0..50]=\""
+      << TLogTruncate(TLogOneLine(rec.input_text), 50, "...") << "\"\n"
+      << "  http_status=" << rec.http_status << "\n"
+      << "  response[0..500]="
+      << TLogTruncate(TLogOneLine(rec.response), 500, "...(truncated)") << "\n"
+      << "  parsed=" << TLogOneLine(rec.output) << "\n"
+      << "  send_input=" << (rec.send_input_ok ? "ok" : "fail") << "\n"
+      << "  result=" << TLogOneLine(rec.result) << "\n"
+      << "---\n";
+    TranslateLogWrite(o.str());
+  }).detach();
+}
 
 size_t Utf8CodePointCount(const std::string& s) {
   size_t count = 0;
@@ -536,7 +645,18 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
   // Spawn worker thread for LLM call. When it returns, delete the original
   // Chinese chars and paste the translation.
   std::thread([this, this_id, chinese, chinese_chars, lang, system_prompt,
-               api_key, model, endpoint, path, temp]() {
+               api_key, model, endpoint, path, temp, category]() {
+    // Logging bundle — populated as we progress; dispatched on every exit
+    // path via TranslateLog() (which is itself a detached thread, so no
+    // disk I/O blocks the IME hot path).
+    TranslateLogRec log_rec;
+    log_rec.target_lang = lang;
+    log_rec.category    = category;
+    log_rec.input_text  = chinese;
+    log_rec.host        = endpoint;
+    log_rec.path        = path;
+    log_rec.model       = model;
+
     // Fallback (legacy lang.txt with no category prefix, or prompts file
     // missing): plain professional-translator prompt, English-only literals.
     std::string sys = system_prompt;
@@ -565,13 +685,19 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
             << JsonEscape(chinese) << "\"}"
             << "]}";
 
+    int http_status = 0;
     std::string body = WinHttpPost(Utf8ToWide(endpoint),
                                    Utf8ToWide(path),
-                                   api_key, payload.str());
+                                   api_key, payload.str(), 15000,
+                                   &http_status);
+    log_rec.http_status = http_status;
+    log_rec.response    = body;
 
     // If user dispatched another translation since we started, abort.
     if (this_id != request_id_.load()) {
       suppress_capture_.store(false);
+      log_rec.result = "superseded";
+      TranslateLog(std::move(log_rec));
       return;
     }
 
@@ -582,22 +708,30 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
             english.back() == '\r' || english.back() == '\t')) {
       english.pop_back();
     }
+    log_rec.output = english;
     if (english.empty()) {
       // Network error / API rejection / empty body. Leave the Chinese in place
       // so user knows translation didn't run; log for diagnostics.
       LOG(ERROR) << "TypeAnything: LLM returned empty for input: " << chinese
                  << "; raw body bytes: " << body.size();
       suppress_capture_.store(false);
+      log_rec.result = "empty-response";
+      TranslateLog(std::move(log_rec));
       return;
     }
 
+    bool send_ok = false;
     if (SetClipboardUtf8(english)) {
       SendBackspaces((int)chinese_chars);
       std::this_thread::sleep_for(std::chrono::milliseconds(30));
       SendPaste();
+      send_ok = true;
     }
+    log_rec.send_input_ok = send_ok;
+    log_rec.result = send_ok ? "ok" : "clipboard-fail";
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     suppress_capture_.store(false);
+    TranslateLog(std::move(log_rec));
   }).detach();
 }
 

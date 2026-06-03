@@ -139,6 +139,26 @@ DWORD ServerImpl::OnCommand(WEASEL_IPC_COMMAND uMsg,
   return handled;
 }
 
+// Force IDC_ARROW on the tray popup menu.
+//
+// The tray icon's popup menu (TrackPopupMenu) reports the cursor through
+// WM_SETCURSOR on the *owner window*, which is this ServerImpl window
+// (class WEASEL_IPC_WINDOW). That class is created with WS_DISABLED and
+// WS_EX_TRANSPARENT (see ServerWinTraits in WeaselServerImpl.h), so the
+// default hit-test path treats menu-item bounds as window edges and
+// returns horizontal / vertical resize cursors. v0.7.3 fixed the
+// TRAYICON_CLASS in SystemTraySDK.cpp, but the popup menu's owner is
+// this window, not the tray icon window, so the fix had no effect.
+// Override here and always force the standard arrow.
+LRESULT ServerImpl::OnSetCursor(UINT uMsg,
+                                WPARAM wParam,
+                                LPARAM lParam,
+                                BOOL& bHandled) {
+  ::SetCursor(::LoadCursor(NULL, IDC_ARROW));
+  bHandled = TRUE;
+  return TRUE;
+}
+
 HWND ServerImpl::Start() {
   std::wstring instanceName = L"(WEASEL)Furandōru-Sukāretto-";
   instanceName += getUsername();

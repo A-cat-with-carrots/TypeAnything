@@ -28,10 +28,15 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "winhttp.lib")
 
+#include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "vendor/webview.h"
@@ -88,6 +93,77 @@ static fs::path SchemaFilePath()  { return RimeUserDir() / L"typeanything.schema
 // the runtime; this is just a UI memory.
 static fs::path KeyringFilePath() { return RimeUserDir() / L"typeanything.keyring.json"; }
 static fs::path PromptsFilePath() { return RimeUserDir() / L"typeanything_prompts.txt"; }
+static fs::path ClassifyLogPath() { return RimeUserDir() / L"typeanything_classify.log"; }
+
+// ─── Classify log (best-effort, never throws) ────────────────
+//
+// Format (must stay consistent across ta-settings/processor/installer):
+//   [YYYY-MM-DD HH:MM:SS] <KIND> target="<short>"
+//     host=<host> path=<path> model=<model>
+//     http_status=<status>
+//     response[0..500]=<truncated raw body, single line, no key>
+//     parsed=<what we extracted>
+//     result=<final outcome / error message>
+//   ---
+//
+// Auto-rotate at 1 MB: the current file is moved over .log.1 (any prior
+// rotation overwritten) and a fresh log started. We never log the API key.
+
+// Replace CR/LF with spaces so multi-line raw bodies stay on one line.
+static std::string LogOneLine(const std::string& s) {
+  std::string r;
+  r.reserve(s.size());
+  for (char c : s) {
+    if (c == '\n' || c == '\r') r.push_back(' ');
+    else                        r.push_back(c);
+  }
+  return r;
+}
+
+// Truncate to `limit` UTF-8 bytes (caller's contract: char-count == byte-count
+// is acceptable here; we slice on byte boundary then strip a trailing partial
+// UTF-8 lead so we don't write a half-codepoint).
+static std::string LogTruncate(const std::string& s, size_t limit,
+                               const char* suffix) {
+  if (s.size() <= limit) return s;
+  size_t cut = limit;
+  // Back off if the cut lands mid-multi-byte sequence.
+  while (cut > 0 && ((unsigned char)s[cut] & 0xC0) == 0x80) --cut;
+  return s.substr(0, cut) + suffix;
+}
+
+static std::string LogTimestamp() {
+  auto now = std::chrono::system_clock::now();
+  std::time_t t = std::chrono::system_clock::to_time_t(now);
+  std::tm tm{};
+  localtime_s(&tm, &t);
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+  return buf;
+}
+
+// Append `body` (already fully formatted, including trailing "---\n") to the
+// classify log; rotate first if the file is > 1 MB. Serialized via a static
+// mutex so concurrent classify calls don't interleave.
+static void ClassifyLog(const std::string& body) {
+  static std::mutex log_mu;
+  std::lock_guard<std::mutex> lk(log_mu);
+  fs::path p = ClassifyLogPath();
+  std::error_code ec;
+  fs::create_directories(p.parent_path(), ec);
+  // Rotate at 1 MB.
+  uintmax_t sz = 0;
+  if (fs::exists(p, ec)) sz = fs::file_size(p, ec);
+  if (!ec && sz > 1024 * 1024) {
+    fs::path rot = p;
+    rot += L".1";
+    fs::remove(rot, ec);
+    fs::rename(p, rot, ec);
+  }
+  std::ofstream f(p, std::ios::binary | std::ios::app);
+  if (!f.is_open()) return;
+  f.write(body.data(), (std::streamsize)body.size());
+}
 
 static std::string ReadAllUtf8(const fs::path& p) {
   std::ifstream f(p, std::ios::binary);
@@ -144,9 +220,13 @@ static std::string ReplaceAllStr(std::string s, const std::string& a,
 
 // HTTPS POST to host+path with Bearer api_key. Returns response body (UTF-8)
 // or "" on transport failure; sets *err to a human message on failure.
+// If `status_code` is non-null, it is filled with the HTTP status (0 if the
+// request never reached the response stage).
 static std::string HttpsPost(const std::string& host, const std::string& path,
                              const std::string& api_key,
-                             const std::string& body, std::string* err) {
+                             const std::string& body, std::string* err,
+                             int* status_code = nullptr) {
+  if (status_code) *status_code = 0;
   auto fail = [&](const std::string& m) -> std::string {
     if (err) *err = m;
     return "";
@@ -208,6 +288,7 @@ static std::string HttpsPost(const std::string& host, const std::string& path,
   WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                       WINHTTP_HEADER_NAME_BY_INDEX, &status, &slen,
                       WINHTTP_NO_HEADER_INDEX);
+  if (status_code) *status_code = (int)status;
   WinHttpCloseHandle(hReq);
   WinHttpCloseHandle(hConnect);
   WinHttpCloseHandle(hSession);
@@ -759,12 +840,45 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   w.bind("nativeClassifyLang",
     [&w](const std::string& seq, const std::string& req, void* /*arg*/) {
       std::thread([&w, seq, req]() {
+        // Shared log-record state. We append exactly ONE entry per
+        // classify call (success OR failure) right before resolving.
+        struct LogRec {
+          std::string target;
+          std::string host;
+          std::string path;
+          std::string model;
+          int         status = 0;
+          std::string response;
+          std::string parsed;
+          std::string result;
+          std::string kind = "CLASSIFY";
+        } rec;
+
+        auto write_log = [&]() {
+          std::ostringstream o;
+          o << "[" << LogTimestamp() << "] " << rec.kind
+            << " target=\"" << LogTruncate(LogOneLine(rec.target), 50, "...") << "\"\n"
+            << "  host=" << rec.host << " path=" << rec.path
+            << " model=" << rec.model << "\n"
+            << "  http_status=" << rec.status << "\n"
+            << "  response[0..500]="
+            << LogTruncate(LogOneLine(rec.response), 500, "...(truncated)") << "\n"
+            << "  parsed=" << LogOneLine(rec.parsed) << "\n"
+            << "  result=" << LogOneLine(rec.result) << "\n"
+            << "---\n";
+          ClassifyLog(o.str());
+        };
+
         auto done = [&](const std::string& s) {
+          rec.result = s;
+          write_log();
           w.resolve(seq, 0, "\"" + JsonEscape(s) + "\"");
         };
+
         auto parts = ParseJsonStringArray(req);
         if (parts.empty()) { done("error:empty target"); return; }
         std::string target = parts[0];
+        rec.target = target;
 
         std::string yaml = ReadAllUtf8(SchemaFilePath());
         std::string apikey = ExtractYamlField(yaml, "api_key");
@@ -774,6 +888,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         if (model.empty()) model = "deepseek-chat";
         if (host.empty())  host  = "api.deepseek.com";
         if (path.empty())  path  = "/v1/chat/completions";
+        rec.host = host; rec.path = path; rec.model = model;
         if (apikey.empty()) { done("error:API key 未配置"); return; }
 
         std::string classify = ReadPromptSection("CLASSIFY");
@@ -789,13 +904,22 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
                 << "{\"role\":\"user\",\"content\":\"" << JsonEscape(target) << "\"}]}";
 
         std::string err;
-        std::string resp = HttpsPost(host, path, apikey, payload.str(), &err);
-        if (resp.empty()) { done("error:" + (err.empty() ? "网络失败" : err)); return; }
+        int http_status = 0;
+        std::string resp = HttpsPost(host, path, apikey, payload.str(), &err,
+                                     &http_status);
+        rec.status = http_status;
+        rec.response = resp;
+        if (resp.empty()) {
+          rec.parsed = "";
+          done("error:" + (err.empty() ? "网络失败" : err));
+          return;
+        }
 
         // Scan from the END for the last A/B/C/D. Reasons:
         //  - LLM tends to put its final answer last (e.g. "Type: A", "Category: B").
         //  - Word-leading capitals (e.g. "Answer", "Category") used to false-match.
         std::string content = ExtractContent(resp);
+        rec.parsed = content;
         for (auto it = content.rbegin(); it != content.rend(); ++it) {
           char c = *it;
           if (c == 'A' || c == 'B' || c == 'C' || c == 'D') { done(std::string(1, c)); return; }
@@ -803,6 +927,20 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         done("error:分类返回无法解析（" + content.substr(0, 20) + "）");
       }).detach();
     }, nullptr);
+
+  // Open the classify log file in the OS default viewer (notepad).
+  w.bind("nativeOpenClassifyLog", [](const std::string& /*args*/) -> std::string {
+    fs::path p = ClassifyLogPath();
+    // Create an empty file if missing so notepad doesn't prompt the user.
+    if (!fs::exists(p)) {
+      std::error_code ec;
+      fs::create_directories(p.parent_path(), ec);
+      std::ofstream f(p, std::ios::binary | std::ios::app);
+    }
+    ShellExecuteW(nullptr, L"open", p.wstring().c_str(),
+                  nullptr, nullptr, SW_SHOWNORMAL);
+    return "true";
+  });
 
   w.bind("nativeOpenUrl", [](const std::string& args) -> std::string {
     auto parts = ParseJsonStringArray(args);

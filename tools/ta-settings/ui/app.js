@@ -43,16 +43,38 @@ async function ensureModelInit() {
   try { await initModelPage(); } catch (e) { /* surface via toast inside */ }
 }
 
-function toast(msg, kind = "ok") {
+function toast(msg, kind = "ok", opts = {}) {
   const el = document.getElementById("toast");
-  el.textContent = msg;
+  // Reset content. `opts.action` adds a clickable link to the right of the
+  // message; useful for "view log" affordances on error toasts.
+  el.textContent = "";
+  const msgSpan = document.createElement("span");
+  msgSpan.textContent = msg;
+  el.appendChild(msgSpan);
+  if (opts.action && opts.actionLabel) {
+    const btn = document.createElement("a");
+    btn.href = "#";
+    btn.textContent = opts.actionLabel;
+    btn.className = "toast-action";
+    btn.style.marginLeft = "12px";
+    btn.style.textDecoration = "underline";
+    btn.style.cursor = "pointer";
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      try { opts.action(); } catch (_) {}
+    });
+    el.appendChild(btn);
+  }
   el.className = "toast " + kind;
   el.hidden = false;
   requestAnimationFrame(() => el.classList.add("show"));
-  setTimeout(() => {
+  // Errors with an action stay visible long enough for the user to click it.
+  const ms = opts.action ? 6000 : 1800;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => {
     el.classList.remove("show");
     setTimeout(() => { el.hidden = true; }, 250);
-  }, 1800);
+  }, ms);
 }
 
 // ─── Language page ────────────────────────────────────────────────
@@ -183,9 +205,15 @@ async function initLangPage() {
       saveBtn.textContent = "分类中…";
       const r = await window.nativeClassifyLang(v);
       saveBtn.textContent = orig;
+      // Reusable "查看日志" affordance — opens %APPDATA%\Rime\typeanything_classify.log
+      // in notepad via the native bridge.
+      const viewLog = {
+        actionLabel: "查看日志",
+        action: () => { try { window.nativeOpenClassifyLog(); } catch (_) {} },
+      };
       if (!r || r.startsWith("error:")) {
         const msg = r ? r.slice(6) : "未知错误";
-        toast("分类失败：" + msg, "error");
+        toast("分类失败：" + msg, "error", viewLog);
         // No API key → jump to 模型配置 so the user can fix it right away.
         if (msg.indexOf("API key") >= 0 || msg.indexOf("401") >= 0) {
           setTimeout(() => showPage("model"), 600);
@@ -194,7 +222,7 @@ async function initLangPage() {
       }
       const cat = r.trim().toUpperCase();
       if (!"ABCD".includes(cat) || cat.length !== 1) {
-        toast("分类返回非法值：" + cat, "error");
+        toast("分类返回非法值：" + cat, "error", viewLog);
         return;
       }
       await window.nativeWriteLang(cat + ":" + v);

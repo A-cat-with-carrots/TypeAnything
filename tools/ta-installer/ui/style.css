@@ -1,21 +1,21 @@
-/* TypeAnything settings — hrdai "type.hrdai.cn" editorial dark palette
+/* TypeAnything installer — hrdai blue/white GitHub palette
    ------------------------------------------------------------------
-   Tokens copied from apps/type/public/styles.css so the desktop dialog
-   feels like a continuation of the brand site. */
+   Tokens mirror tools/ta-settings/ui/style.css so installer + settings
+   share one visual language. */
 
 :root {
-  color-scheme: dark;
-  --bg:        #15212a;
-  --bg-deep:   #0d161c;
-  --panel:     #1c2a36;
-  --panel-2:   #243643;
-  --ink:       #f4f1ea;
-  --muted:     #a4b2bd;
-  --green:     #7fd1a6;
-  --blue:      #8fc0e8;
-  --accent:    #d4b27a;            /* gold */
-  --line:      rgba(244, 241, 234, 0.14);
-  --line-soft: rgba(244, 241, 234, 0.08);
+  color-scheme: light;
+  --bg:        #FAFBFC;
+  --bg-deep:   #F0F3F7;
+  --panel:     #FFFFFF;
+  --panel-2:   #F0F3F7;
+  --ink:       #1F2328;
+  --muted:     #57606A;
+  --green:     #5a9b78;
+  --blue:      #5b89b3;
+  --accent:    #0969DA;            /* GitHub blue */
+  --line:      #D0D7DE;
+  --line-soft: #E4E8EC;
   --radius:    14px;
   --radius-sm: 10px;
   --radius-pill: 999px;
@@ -39,9 +39,9 @@ html, body {
   line-height: 1.55;
   color: var(--ink);
   background:
-    radial-gradient(circle at 80% 18%, rgba(127, 209, 166, 0.10), transparent 22rem),
-    radial-gradient(circle at 18% 82%, rgba(212, 178, 122, 0.12), transparent 24rem),
-    linear-gradient(180deg, #1a2832, #15212a 62%, #0d161c);
+    radial-gradient(circle at 80% 18%, rgba(9, 105, 218, 0.05), transparent 22rem),
+    radial-gradient(circle at 18% 82%, rgba(9, 105, 218, 0.06), transparent 24rem),
+    linear-gradient(180deg, #FAFBFC, #FAFBFC 62%, #F0F3F7);
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
@@ -59,7 +59,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background: linear-gradient(rgba(31, 35, 40, 0.02) 1px, transparent 1px);
   background-size: 100% 6px;
   opacity: 0.5;
   z-index: 0;
@@ -75,7 +75,7 @@ body::before {
   justify-content: space-between;
   padding: 0 6px 0 18px;
   border-bottom: 1px solid var(--line);
-  background: rgba(21, 33, 42, 0.65);
+  background: rgba(250, 251, 252, 0.72);
   backdrop-filter: blur(14px);
   -webkit-app-region: drag;
   app-region: drag;
@@ -127,7 +127,7 @@ body::before {
   transition: background 0.14s, color 0.14s;
   font-family: var(--font-sans);
 }
-.x:hover { background: rgba(220, 60, 60, 0.55); color: var(--ink); }
+.x:hover { background: rgba(220, 60, 60, 0.85); color: #FFFFFF; }
 
 /* ─── Main ──────────────────────────────────────────────────────── */
 main {
@@ -142,13 +142,13 @@ main {
 
 main::-webkit-scrollbar { width: 10px; }
 main::-webkit-scrollbar-thumb {
-  background: rgba(244, 241, 234, 0.20);
+  background: rgba(31, 35, 40, 0.18);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 main::-webkit-scrollbar-thumb:hover {
-  background: rgba(244, 241, 234, 0.36);
+  background: rgba(31, 35, 40, 0.32);
   background-clip: content-box;
 }
 
@@ -215,7 +215,7 @@ h1 .accent { color: var(--accent); }
 .input-wrap input::placeholder { color: var(--muted); opacity: 0.7; }
 .input-wrap input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(212, 178, 122, 0.18);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.18);
 }
 
 /* ─── Category groups ───────────────────────────────────────────── */
@@ -263,7 +263,7 @@ h1 .accent { color: var(--accent); }
 .chip:active { transform: scale(0.96); }
 .chip.active {
   background: var(--accent);
-  color: var(--bg-deep);
+  color: #FFFFFF;
   border-color: var(--accent);
   font-weight: 600;
 }
@@ -292,12 +292,13 @@ h1 .accent { color: var(--accent); }
 
 .btn.primary {
   background: var(--accent);
-  color: var(--bg-deep);
+  color: #FFFFFF;
   border-color: var(--accent);
 }
 .btn.primary:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 4px 14px rgba(212, 178, 122, 0.32);
+  background: #0550AE;
+  border-color: #0550AE;
+  box-shadow: 0 4px 14px rgba(9, 105, 218, 0.32);
 }
 
 /* Ghost variant — text-link style, no border. Primary CTA wins visually. */
@@ -387,7 +388,7 @@ h1 .accent { color: var(--accent); }
 .form input::placeholder { color: var(--muted); opacity: 0.5; }
 .form input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(212, 178, 122, 0.18);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.18);
 }
 
 .masked { position: relative; width: 100%; }
@@ -405,7 +406,7 @@ h1 .accent { color: var(--accent); }
   font-size: 14px;
   transition: all 0.12s;
 }
-.masked .toggle:hover { background: rgba(212, 178, 122, 0.12); color: var(--accent); }
+.masked .toggle:hover { background: rgba(9, 105, 218, 0.10); color: var(--accent); }
 
 .hint {
   grid-column: 2 / -1;
@@ -417,7 +418,7 @@ h1 .accent { color: var(--accent); }
 .hint a {
   color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px dashed rgba(212, 178, 122, 0.5);
+  border-bottom: 1px dashed rgba(9, 105, 218, 0.5);
   padding-bottom: 1px;
 }
 .hint a:hover { border-bottom-style: solid; }
@@ -438,10 +439,10 @@ h1 .accent { color: var(--accent); }
   font-family: var(--font-sans);
   font-size: 12.5px;
   letter-spacing: 0.06em;
-  color: var(--bg-deep);
+  color: #FFFFFF;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 24px 60px rgba(31, 35, 40, 0.18);
   opacity: 0;
   transition: all 0.26s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
@@ -451,8 +452,8 @@ h1 .accent { color: var(--accent); }
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
-.toast.ok    { background: var(--green); }
-.toast.error { background: #e88080; color: var(--bg-deep); }
+.toast.ok    { background: var(--accent); color: #FFFFFF; }
+.toast.error { background: #D1242F; color: #FFFFFF; }
 
 /* ─── Installer-specific extensions ─────────────────────────────── */
 
@@ -481,7 +482,7 @@ h1 .accent { color: var(--accent); }
 .form input::placeholder { color: var(--muted); opacity: 0.55; }
 .form input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(212, 178, 122, 0.18);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.18);
 }
 
 .masked { position: relative; }
@@ -496,13 +497,13 @@ h1 .accent { color: var(--accent); }
   border-radius: 6px; font-size: 14px;
   transition: all 0.12s;
 }
-.masked .toggle:hover { background: rgba(212, 178, 122, 0.12); color: var(--accent); }
+.masked .toggle:hover { background: rgba(9, 105, 218, 0.10); color: var(--accent); }
 
 .hint { margin: -2px 0 0; font-size: 12.5px; }
 .hint a {
   color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px dashed rgba(212, 178, 122, 0.5);
+  border-bottom: 1px dashed rgba(9, 105, 218, 0.5);
   padding-bottom: 1px;
 }
 .hint a:hover { border-bottom-style: solid; }
@@ -515,7 +516,7 @@ h1 .accent { color: var(--accent); }
   line-height: 1.6;
   margin: 18px 0 0;
   padding: 12px 14px;
-  background: rgba(244, 241, 234, 0.04);
+  background: rgba(31, 35, 40, 0.03);
   border-left: 2px solid var(--accent);
   border-radius: 6px;
 }
@@ -523,7 +524,7 @@ h1 .accent { color: var(--accent); }
 /* ─── Progress bar ──────────────────────────────────────────────── */
 .progressbar {
   height: 6px;
-  background: rgba(244, 241, 234, 0.10);
+  background: rgba(31, 35, 40, 0.08);
   border-radius: 999px;
   overflow: hidden;
   margin: 8px 0 18px;
@@ -531,7 +532,7 @@ h1 .accent { color: var(--accent); }
 .progressbar .bar {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #d4b27a, #f0d699);
+  background: linear-gradient(90deg, #0969DA, #54AEFF);
   border-radius: 999px;
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -554,7 +555,7 @@ h1 .accent { color: var(--accent); }
   color: var(--accent);
 }
 .log li.done::before { content: "✓"; color: var(--green); }
-.log li.error::before { content: "✕"; color: #e88080; }
+.log li.error::before { content: "✕"; color: #D1242F; }
 
 #progressMsg { color: var(--ink); font-weight: 500; }
 
@@ -565,7 +566,7 @@ h1 .accent { color: var(--accent); }
   gap: 10px;
   margin: 14px 0 4px;
   padding: 8px 12px;
-  background: rgba(244, 241, 234, 0.04);
+  background: rgba(31, 35, 40, 0.03);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
 }
