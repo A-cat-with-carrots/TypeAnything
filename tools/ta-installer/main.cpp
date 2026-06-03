@@ -1558,7 +1558,7 @@ static void DoInstall(InstallOptions opts) {
                    " copy_ec=" + std::to_string(ec.value()));
 
     // 31. Add/Remove Programs entry.
-    WriteUninstallRegistry(wdir, L"0.7.4");
+    WriteUninstallRegistry(wdir, L"0.7.5");
     InstallLog("31. write Uninstall registry",
                "ok (HKLM\\...\\Uninstall\\TypeAnything)");
   }
@@ -1725,8 +1725,21 @@ static void ApplyMica(HWND hwnd) {
   const DWORD DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
   int backdrop = DWMSBT_MAINWINDOW;
   DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
-  BOOL dark = TRUE;
+  // Light caption to match the blue-white body palette (v0.7.3+).
+  // Setting dark=TRUE produced a black title bar above the white app body.
+  BOOL dark = FALSE;
   DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+
+  // Hide the icon in the title bar (keeps the taskbar icon intact).
+  // WS_EX_DLGMODALFRAME tells the non-client renderer to skip the small
+  // class icon in the caption strip.
+  LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | WS_EX_DLGMODALFRAME);
+  SendMessageW(hwnd, WM_SETICON, ICON_SMALL, 0);
+  SendMessageW(hwnd, WM_SETICON, ICON_BIG, 0);
+  SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+               SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
 static std::string FileUrl(const fs::path& p) {

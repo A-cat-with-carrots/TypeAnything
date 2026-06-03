@@ -654,21 +654,20 @@ static void ApplyMica(HWND hwnd) {
   int backdrop = DWMSBT_MAINWINDOW;
   DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
 
-  // Match dark mode to system
-  HKEY k;
-  BOOL useLight = TRUE;
-  if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                    L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-                    0, KEY_READ, &k) == ERROR_SUCCESS) {
-    DWORD v = 1, len = sizeof(v), type = 0;
-    if (RegQueryValueExW(k, L"AppsUseLightTheme", nullptr, &type,
-                         (LPBYTE)&v, &len) == ERROR_SUCCESS) {
-      useLight = v ? TRUE : FALSE;
-    }
-    RegCloseKey(k);
-  }
-  BOOL dark = useLight ? FALSE : TRUE;
+  // Force light caption — our body palette is blue-white regardless of the
+  // system theme, so following the OS dark mode produces a black title bar
+  // sitting above a white body.
+  BOOL dark = FALSE;
   DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+
+  // Hide the icon in the title bar (taskbar icon stays).
+  LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | WS_EX_DLGMODALFRAME);
+  SendMessageW(hwnd, WM_SETICON, ICON_SMALL, 0);
+  SendMessageW(hwnd, WM_SETICON, ICON_BIG, 0);
+  SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+               SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
 // ───────────────────────── main ──────────────────────────────
