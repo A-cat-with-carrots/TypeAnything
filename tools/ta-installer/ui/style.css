@@ -176,7 +176,12 @@ main::-webkit-scrollbar-thumb:hover {
   background-clip: content-box;
 }
 
-.page { animation: fade-in 0.22s ease-out; }
+.page {
+  animation: fade-in 0.22s ease-out;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
 .page[hidden] { display: none; }
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(6px); }
@@ -450,7 +455,8 @@ h1 .accent { color: var(--accent); }
 .actions {
   display: flex; gap: 10px;
   justify-content: flex-end;
-  margin-top: 28px;
+  margin-top: auto;
+  padding-top: 20px;
 }
 
 /* ─── Toast ─────────────────────────────────────────────────────── */
