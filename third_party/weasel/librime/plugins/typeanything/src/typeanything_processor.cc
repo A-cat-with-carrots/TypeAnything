@@ -98,13 +98,32 @@ std::string JsonEscape(const std::string& s) {
   return r;
 }
 
+// Handles two response shapes:
+//   OpenAI / DeepSeek / Moonshot / 智谱 / Ollama-v1: "content":"..."
+//   Anthropic /v1/messages:                        "content":[{"type":"text","text":"..."}]
+// Without the Anthropic branch the naive scan grabs the field name "type"
+// as the value (see issue #2).
 std::string ExtractContent(const std::string& json) {
   std::string needle = "\"content\"";
   size_t pos = json.find(needle);
   if (pos == std::string::npos) return "";
   pos = json.find(':', pos);
   if (pos == std::string::npos) return "";
-  pos = json.find('"', pos);
+
+  size_t v = pos + 1;
+  while (v < json.size() && (json[v] == ' ' || json[v] == '\t' ||
+                             json[v] == '\n' || json[v] == '\r')) ++v;
+  if (v >= json.size()) return "";
+
+  if (json[v] == '[') {
+    size_t t = json.find("\"text\"", v);
+    if (t == std::string::npos) return "";
+    pos = json.find(':', t);
+    if (pos == std::string::npos) return "";
+    pos = json.find('"', pos);
+  } else {
+    pos = json.find('"', v);
+  }
   if (pos == std::string::npos) return "";
   ++pos;
   std::string out;

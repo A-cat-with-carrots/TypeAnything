@@ -32,6 +32,8 @@ Examples:
   古风小生 → B
 
 Output ONE letter only: A, B, C, or D.
+No JSON. No quotes. No explanation. No prefix like "Type:" or "Category:".
+Just the single letter.
 ===A===
 Translate the user's Chinese into fluent, idiomatic {LANG}.
 

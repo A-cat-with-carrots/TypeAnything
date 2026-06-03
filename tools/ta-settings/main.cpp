@@ -218,13 +218,41 @@ static std::string HttpsPost(const std::string& host, const std::string& path,
 }
 
 // Pull the assistant message content out of an OpenAI-compatible JSON reply.
+//
+// Handles two response shapes:
+//   • OpenAI / DeepSeek / Moonshot / 智谱 / Ollama-v1:
+//       "content":"the text"
+//   • Anthropic /v1/messages:
+//       "content":[{"type":"text","text":"the text"}]
+//     — naive `find '"' after ':'` matches the field name "type" and yields
+//       the literal string "type" as content (which is what issue #2 hit).
 static std::string ExtractContent(const std::string& json) {
   size_t k = json.find("\"content\"");
   if (k == std::string::npos) return "";
   size_t colon = json.find(':', k);
   if (colon == std::string::npos) return "";
-  size_t q1 = json.find('"', colon + 1);
+
+  // Walk past whitespace after the colon to see the value's first char.
+  size_t v = colon + 1;
+  while (v < json.size() && (json[v] == ' ' || json[v] == '\t' ||
+                             json[v] == '\n' || json[v] == '\r')) ++v;
+  if (v >= json.size()) return "";
+
+  // Anthropic shape: `"content":[{"type":"text","text":"..."}]`.
+  // Locate the FIRST `"text":"..."` after the array open and extract that.
+  size_t q1;
+  if (json[v] == '[') {
+    size_t t = json.find("\"text\"", v);
+    if (t == std::string::npos) return "";
+    size_t tColon = json.find(':', t);
+    if (tColon == std::string::npos) return "";
+    q1 = json.find('"', tColon + 1);
+  } else {
+    // OpenAI shape: `"content":"..."`. Skip to opening quote.
+    q1 = json.find('"', v);
+  }
   if (q1 == std::string::npos) return "";
+
   std::string out;
   for (size_t i = q1 + 1; i < json.size(); ++i) {
     char c = json[i];
@@ -755,7 +783,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         std::ostringstream payload;
         payload << "{\"model\":\"" << JsonEscape(model) << "\","
                 << "\"temperature\":0,"
-                << "\"max_tokens\":4,"
+                << "\"max_tokens\":16,"
                 << "\"messages\":["
                 << "{\"role\":\"system\",\"content\":\"" << JsonEscape(classify) << "\"},"
                 << "{\"role\":\"user\",\"content\":\"" << JsonEscape(target) << "\"}]}";
@@ -764,8 +792,12 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         std::string resp = HttpsPost(host, path, apikey, payload.str(), &err);
         if (resp.empty()) { done("error:" + (err.empty() ? "网络失败" : err)); return; }
 
+        // Scan from the END for the last A/B/C/D. Reasons:
+        //  - LLM tends to put its final answer last (e.g. "Type: A", "Category: B").
+        //  - Word-leading capitals (e.g. "Answer", "Category") used to false-match.
         std::string content = ExtractContent(resp);
-        for (char c : content) {
+        for (auto it = content.rbegin(); it != content.rend(); ++it) {
+          char c = *it;
           if (c == 'A' || c == 'B' || c == 'C' || c == 'D') { done(std::string(1, c)); return; }
         }
         done("error:分类返回无法解析（" + content.substr(0, 20) + "）");
