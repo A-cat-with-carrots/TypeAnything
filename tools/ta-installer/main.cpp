@@ -1559,7 +1559,7 @@ static void DoInstall(InstallOptions opts) {
                    " copy_ec=" + std::to_string(ec.value()));
 
     // 31. Add/Remove Programs entry.
-    WriteUninstallRegistry(wdir, L"0.7.6");
+    WriteUninstallRegistry(wdir, L"0.7.7");
     InstallLog("31. write Uninstall registry",
                "ok (HKLM\\...\\Uninstall\\TypeAnything)");
   }
@@ -1947,6 +1947,17 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int) {
   HWND hwnd = (HWND)w.window();
   w.bind("nativeMinimize", [hwnd](const std::string&) -> std::string {
     ShowWindow(hwnd, SW_MINIMIZE);
+    return "true";
+  });
+  // WebView2's child HWND covers the entire client area and intercepts
+  // every mouse message before our parent's WM_NCHITTEST sees it, so the
+  // subclass's HTCAPTION return is dead code. We work around that by
+  // having the HTML titlebar's mousedown handler call this binding —
+  // SendMessage(WM_NCLBUTTONDOWN, HTCAPTION) tells the OS to enter its
+  // native drag loop from the current cursor position.
+  w.bind("nativeStartDrag", [hwnd](const std::string&) -> std::string {
+    ReleaseCapture();
+    SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
     return "true";
   });
   ApplyMica(hwnd);

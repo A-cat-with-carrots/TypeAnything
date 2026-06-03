@@ -74,14 +74,15 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 6px 0 18px;
+  padding: 0 0 0 18px;
   border-bottom: 1px solid var(--line);
   background: rgba(250, 251, 252, 0.72);
   backdrop-filter: blur(14px);
-  -webkit-app-region: drag;
-  app-region: drag;
   flex-shrink: 0;
 }
+/* All children except .window-controls get a right gap so the buttons hug
+   the window's right edge while everything else stays inset. */
+.titlebar > *:not(.window-controls) { margin-right: 12px; }
 .title { display: flex; align-items: center; gap: 10px; }
 
 /* ── Pure-mode toggle in titlebar ─────────────────────────────────

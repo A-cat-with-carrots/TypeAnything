@@ -405,6 +405,18 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (wcMin)   wcMin.addEventListener("click",   () => window.nativeMinimize?.());
   if (wcClose) wcClose.addEventListener("click", () => window.nativeClose?.());
 
+  // Window drag — WebView2's child window swallows WM_NCHITTEST, so we
+  // explicitly hand off to the OS drag loop on mousedown in the titlebar
+  // (excluding the buttons + the pure-mode toggle + any interactive ctl).
+  const titlebar = document.querySelector(".titlebar");
+  if (titlebar) {
+    titlebar.addEventListener("mousedown", e => {
+      if (e.button !== 0) return;
+      if (e.target.closest(".window-controls, .pure-toggle, button, input, label, a")) return;
+      window.nativeStartDrag?.();
+    });
+  }
+
   // Always init both pages so user can swap freely. Lang init is cheap;
   // model init makes one nativeReadSchema call.
   await initLangPage();

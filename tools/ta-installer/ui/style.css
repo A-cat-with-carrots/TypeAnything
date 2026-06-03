@@ -73,12 +73,10 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 6px 0 18px;
+  padding: 0 0 0 18px;
   border-bottom: 1px solid var(--line);
   background: rgba(250, 251, 252, 0.72);
   backdrop-filter: blur(14px);
-  -webkit-app-region: drag;
-  app-region: drag;
   flex-shrink: 0;
 }
 .title { display: flex; align-items: center; gap: 10px; }

@@ -993,6 +993,16 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     ShowWindow(hwnd, SW_MINIMIZE);
     return "true";
   });
+  // WebView2's child HWND covers the entire client area and intercepts
+  // every mouse message before WM_NCHITTEST reaches our parent, so the
+  // subclass's HTCAPTION return never runs. Workaround: HTML titlebar
+  // mousedown handler invokes this binding, which kicks off the OS's
+  // native window drag from the current cursor position.
+  w.bind("nativeStartDrag", [hwnd](const std::string&) -> std::string {
+    ReleaseCapture();
+    SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+    return "true";
+  });
   ApplyMica(hwnd);
 
   // Single-instance: publish our HWND in a named file mapping so a

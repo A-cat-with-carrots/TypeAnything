@@ -20,10 +20,6 @@ function showPage(name) {
   document.querySelectorAll(".page").forEach(el => el.hidden = true);
   const el = $("page-" + name);
   if (el) el.hidden = false;
-  $("pageTitle").textContent =
-    name === "progress" ? (MODE === "uninstall" ? "卸载中" : "安装中")
-  : name === "done"     ? "完成"
-  :                       "";
 }
 
 function appendLog(msg, status) {
@@ -95,6 +91,18 @@ window.addEventListener("DOMContentLoaded", async () => {
   const wcClose = $("wcClose");
   if (wcMin)   wcMin.addEventListener("click",   () => window.nativeMinimize?.());
   if (wcClose) wcClose.addEventListener("click", () => window.nativeClose());
+
+  // Window drag — WebView2's child window swallows WM_NCHITTEST, so we
+  // explicitly hand off to the OS drag loop on mousedown in the titlebar
+  // (excluding the buttons + any interactive control).
+  const titlebar = document.querySelector(".titlebar");
+  if (titlebar) {
+    titlebar.addEventListener("mousedown", e => {
+      if (e.button !== 0) return;
+      if (e.target.closest(".window-controls, button, input, a")) return;
+      window.nativeStartDrag?.();
+    });
+  }
 
   $("btnSkip").addEventListener("click", () => window.nativeClose());
   $("btnOpenModel").addEventListener("click", async () => {
