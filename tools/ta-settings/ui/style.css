@@ -335,7 +335,7 @@ main {
   z-index: 1;
   flex: 1;
   overflow-y: auto;
-  padding: 22px 28px 44px;
+  padding: 22px 28px 68px;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
