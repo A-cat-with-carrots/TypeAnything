@@ -784,7 +784,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   w.set_title("TypeAnything");
   // Same dimensions for both pages — user switches between them via the
   // top tab nav, so the window size shouldn't jump.
-  w.set_size(700, 810, WEBVIEW_HINT_NONE);
+  w.set_size(700, 786, WEBVIEW_HINT_NONE);
   w.set_size(560, 600, WEBVIEW_HINT_MIN);
 
   // ─── Native bridge ────────────────────────────────────────

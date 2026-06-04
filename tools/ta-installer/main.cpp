@@ -1559,7 +1559,7 @@ static void DoInstall(InstallOptions opts) {
                    " copy_ec=" + std::to_string(ec.value()));
 
     // 31. Add/Remove Programs entry.
-    WriteUninstallRegistry(wdir, L"0.7.10");
+    WriteUninstallRegistry(wdir, L"0.7.11");
     InstallLog("31. write Uninstall registry",
                "ok (HKLM\\...\\Uninstall\\TypeAnything)");
   }
@@ -1876,7 +1876,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int) {
   w.set_title(uninstall_mode ? "TypeAnything 卸载" : "TypeAnything 安装");
   // Fixed size — installer is a dialog, not a resizeable workspace.
   // Also dodges WebView2 user-data window-state persistence quirks.
-  w.set_size(600, 380, WEBVIEW_HINT_FIXED);
+  w.set_size(576, 380, WEBVIEW_HINT_FIXED);
 
   std::atomic<bool> installing{false};
   // Default install directory shown in the picker. If a previous install

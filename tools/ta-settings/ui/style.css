@@ -340,10 +340,13 @@ main {
   app-region: no-drag;
 }
 
-main::-webkit-scrollbar { width: 10px; }
+/* Slim transparent scrollbar — replaces the chunky gray Win11 default. */
+main { scrollbar-width: thin; scrollbar-color: rgba(31,35,40,0.18) transparent; }
+main::-webkit-scrollbar { width: 8px; background: transparent; }
+main::-webkit-scrollbar-track { background: transparent; border: none; }
 main::-webkit-scrollbar-thumb {
   background: rgba(31, 35, 40, 0.18);
-  border-radius: 5px;
+  border-radius: 4px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
