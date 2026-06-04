@@ -43,6 +43,37 @@ async function ensureModelInit() {
   try { await initModelPage(); } catch (e) { /* surface via toast inside */ }
 }
 
+// Map a raw classify-error tail (the text after the "error:" prefix returned
+// by nativeClassifyLang) into a human-readable, user-actionable Chinese
+// string. Ordered matching: most specific first. Falls back to a generic
+// "保存失败:" with the original message.
+function humanizeClassifyError(raw) {
+  const s = String(raw || "").trim();
+  const low = s.toLowerCase();
+  // API key missing — checked before generic auth so it wins on overlap.
+  if (low.indexOf("api key") >= 0 || low.indexOf("api_key") >= 0 ||
+      s.indexOf("未配置") >= 0) {
+    return "请先在『模型配置』填 API key";
+  }
+  if (low.indexOf("401") >= 0 || low.indexOf("403") >= 0) {
+    return "API key 无效或没有权限，请检查";
+  }
+  if (low.indexOf("429") >= 0) {
+    return "调用过于频繁，请稍后再试";
+  }
+  if (low.indexOf("500") >= 0 || low.indexOf("502") >= 0 ||
+      low.indexOf("503") >= 0 || low.indexOf("5xx") >= 0) {
+    return "AI 服务端故障，请稍后再试";
+  }
+  if (s.indexOf("无法解析") >= 0 || low.indexOf("parse") >= 0) {
+    return "模型回复格式不兼容，建议换 DeepSeek / OpenAI";
+  }
+  if (s.indexOf("网络") >= 0 || low.indexOf("network") >= 0) {
+    return "网络异常，请检查代理 / VPN 后重试";
+  }
+  return "保存失败：" + s;
+}
+
 function toast(msg, kind = "ok", opts = {}) {
   const el = document.getElementById("toast");
   // Reset content. `opts.action` adds a clickable link to the right of the
@@ -205,24 +236,21 @@ async function initLangPage() {
       saveBtn.textContent = "分类中…";
       const r = await window.nativeClassifyLang(v);
       saveBtn.textContent = orig;
-      // Reusable "查看日志" affordance — opens %APPDATA%\Rime\typeanything_classify.log
-      // in notepad via the native bridge.
-      const viewLog = {
-        actionLabel: "查看日志",
-        action: () => { try { window.nativeOpenClassifyLog(); } catch (_) {} },
-      };
       if (!r || r.startsWith("error:")) {
         const msg = r ? r.slice(6) : "未知错误";
-        toast("分类失败：" + msg, "error", viewLog);
-        // No API key → jump to 模型配置 so the user can fix it right away.
-        if (msg.indexOf("API key") >= 0 || msg.indexOf("401") >= 0) {
+        toast(humanizeClassifyError(msg), "error");
+        // No API key / auth failure → jump to 模型配置 so user can fix it.
+        const low = msg.toLowerCase();
+        if (low.indexOf("api key") >= 0 || low.indexOf("api_key") >= 0 ||
+            msg.indexOf("未配置") >= 0 ||
+            low.indexOf("401") >= 0 || low.indexOf("403") >= 0) {
           setTimeout(() => showPage("model"), 600);
         }
         return;  // keep old lang.txt, don't write a bad value
       }
       const cat = r.trim().toUpperCase();
       if (!"ABCD".includes(cat) || cat.length !== 1) {
-        toast("分类返回非法值：" + cat, "error", viewLog);
+        toast("保存失败：分类返回非法值 " + cat, "error");
         return;
       }
       await window.nativeWriteLang(cat + ":" + v);

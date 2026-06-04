@@ -22,6 +22,7 @@
 #include <windows.h>
 #include <winhttp.h>
 #include <shlobj.h>
+#include <shellapi.h>   // ShellExecuteW (used by LaunchTaSettingsModelPage)
 #pragma comment(lib, "shell32.lib")
 #include <string>
 #include <vector>
@@ -390,6 +391,25 @@ bool SetClipboardUtf8(const std::string& utf8) {
   return false;
 }
 
+// Launch <WeaselRoot>\ta-settings.exe --page model so the user can fill the
+// API key. WeaselRoot is read from HKLM\Software\WeaselRoot (default value).
+// Fire-and-forget; failure is swallowed so we never block the IME hot path.
+// Returns true if ShellExecuteW reported success.
+bool LaunchTaSettingsModelPage() {
+  wchar_t root[MAX_PATH] = {0};
+  DWORD cb = sizeof(root);
+  LONG rc = RegGetValueW(HKEY_LOCAL_MACHINE, L"Software\\WeaselRoot", NULL,
+                         RRF_RT_REG_SZ, NULL, root, &cb);
+  if (rc != ERROR_SUCCESS || root[0] == L'\0') return false;
+  std::wstring exe = std::wstring(root);
+  if (!exe.empty() && exe.back() != L'\\' && exe.back() != L'/')
+    exe.push_back(L'\\');
+  exe += L"ta-settings.exe";
+  HINSTANCE h = ShellExecuteW(NULL, L"open", exe.c_str(),
+                              L"--page model", root, SW_SHOWNORMAL);
+  return (INT_PTR)h > 32;
+}
+
 void SendPaste() {
   INPUT in[4] = {};
   in[0].type = INPUT_KEYBOARD;
@@ -579,11 +599,28 @@ rime::ProcessResult TypeAnythingProcessor::ProcessKeyEvent(
   }
 
   if (key_event.keycode() != XK_Return) return rime::kNoop;
-  if (api_key_.empty()) return rime::kNoop;
   if (accumulated_.empty()) return rime::kNoop;
 
   rime::Context* ctx = engine_->context();
   if (ctx && ctx->IsComposing()) return rime::kNoop;
+
+  // No API key configured: surface the model-config panel instead of silently
+  // dropping the user's input. We still consume the accumulated buffer so the
+  // host app doesn't get a stray Enter inserting a newline next to Chinese.
+  if (api_key_.empty()) {
+    TranslateLogRec rec;
+    rec.target_lang = ResolveTargetLang();
+    rec.input_text  = accumulated_;
+    rec.host        = endpoint_;
+    rec.path        = endpoint_path_;
+    rec.model       = model_;
+    bool launched = LaunchTaSettingsModelPage();
+    rec.result = launched ? "api_key_empty;ta_settings_launched"
+                          : "api_key_empty;ta_settings_launch_failed";
+    TranslateLog(std::move(rec));
+    accumulated_.clear();
+    return rime::kNoop;
+  }
 
   // Pure mode (user toggled "纯净模式" in lang picker): drop the
   // accumulated buffer but return kNoop so Enter falls through to the
@@ -697,6 +734,18 @@ void TypeAnythingProcessor::DispatchTranslate(const std::string& chinese) {
     if (this_id != request_id_.load()) {
       suppress_capture_.store(false);
       log_rec.result = "superseded";
+      TranslateLog(std::move(log_rec));
+      return;
+    }
+
+    // 401 / 403 — treat as invalid or unauthorized key. Open the model-config
+    // panel so the user can correct it; do not paste anything.
+    if (http_status == 401 || http_status == 403) {
+      bool launched = LaunchTaSettingsModelPage();
+      suppress_capture_.store(false);
+      log_rec.result = launched
+          ? "auth_failed;ta_settings_launched"
+          : "auth_failed;ta_settings_launch_failed";
       TranslateLog(std::move(log_rec));
       return;
     }

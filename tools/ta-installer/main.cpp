@@ -1559,7 +1559,7 @@ static void DoInstall(InstallOptions opts) {
                    " copy_ec=" + std::to_string(ec.value()));
 
     // 31. Add/Remove Programs entry.
-    WriteUninstallRegistry(wdir, L"0.7.11");
+    WriteUninstallRegistry(wdir, L"0.8.0");
     InstallLog("31. write Uninstall registry",
                "ok (HKLM\\...\\Uninstall\\TypeAnything)");
   }
@@ -1588,7 +1588,25 @@ static void DoInstall(InstallOptions opts) {
   InstallLog("33. install complete",
              std::string("success reboot_needed=") +
                  (reboot_needed ? "yes" : "no"));
-  PushStatus(100, final_msg, final_msg, "done", true);
+  if (reboot_needed) {
+    // Emit a final JSON status carrying needs_reboot=true so the UI swaps
+    // to #page-done-reboot instead of the regular done page. Hand-rolled
+    // because PushStatus has no flag for this.
+    std::ostringstream j;
+    j << "{\"percent\":100";
+    j << ",\"msg\":\"" << JsonEscape(final_msg) << "\"";
+    j << ",\"log\":\"" << JsonEscape(final_msg) << "\"";
+    j << ",\"logStatus\":\"done\"";
+    j << ",\"done\":true";
+    j << ",\"needs_reboot\":true";
+    j << "}";
+    {
+      std::lock_guard<std::mutex> lock(g_progress.mu);
+      g_progress.queue.push_back(j.str());
+    }
+  } else {
+    PushStatus(100, final_msg, final_msg, "done", true);
+  }
 }
 
 // ─── uninstall procedure ────────────────────────────────────────
@@ -1928,6 +1946,36 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int) {
     ShellExecuteW(nullptr, L"open", exe.c_str(), wargs.c_str(),
                   nullptr, SW_SHOWNORMAL);
     return "true";
+  });
+
+  // Reboot now — used by the #page-done-reboot variant when MoveFileEx
+  // pending-on-reboot writes queued one or more DLLs. Requires
+  // SE_SHUTDOWN_NAME (we already run elevated via the installer manifest,
+  // so AdjustTokenPrivileges will succeed). EWX_RESTARTAPPS asks Windows
+  // to relaunch the user's open apps after the reboot.
+  w.bind("nativeRebootNow", [](const std::string&) -> std::string {
+    HANDLE hTok = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(),
+                          TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hTok)) {
+      return "false";
+    }
+    TOKEN_PRIVILEGES tp{};
+    tp.PrivilegeCount = 1;
+    if (!LookupPrivilegeValueW(nullptr, SE_SHUTDOWN_NAME,
+                               &tp.Privileges[0].Luid)) {
+      CloseHandle(hTok);
+      return "false";
+    }
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    AdjustTokenPrivileges(hTok, FALSE, &tp, 0, nullptr, nullptr);
+    DWORD adj_err = GetLastError();
+    CloseHandle(hTok);
+    if (adj_err != ERROR_SUCCESS) return "false";
+    BOOL ok = ExitWindowsEx(EWX_REBOOT | EWX_RESTARTAPPS,
+                            SHTDN_REASON_MAJOR_APPLICATION |
+                                SHTDN_REASON_MINOR_INSTALLATION |
+                                SHTDN_REASON_FLAG_PLANNED);
+    return ok ? "true" : "false";
   });
 
   w.bind("nativeOpenUrl", [](const std::string& args) -> std::string {

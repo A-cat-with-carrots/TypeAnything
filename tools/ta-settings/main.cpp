@@ -692,7 +692,7 @@ static LRESULT CALLBACK TaSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
   } else if (msg == WM_NCHITTEST) {
     RECT rc; GetWindowRect(hwnd, &rc);
     POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
-    const int RESIZE = 6;
+    const int RESIZE = 8;
     bool left   = pt.x <  rc.left  + RESIZE;
     bool right  = pt.x >= rc.right - RESIZE;
     bool top    = pt.y <  rc.top   + RESIZE;
@@ -784,8 +784,23 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
   w.set_title("TypeAnything");
   // Same dimensions for both pages — user switches between them via the
   // top tab nav, so the window size shouldn't jump.
-  w.set_size(700, 786, WEBVIEW_HINT_NONE);
-  w.set_size(560, 600, WEBVIEW_HINT_MIN);
+  //
+  // Default size 700x786 is too tall for 1366x768 / 1536x864 @ 125% DPI
+  // (issue #10). Clamp to work-area minus a small safety margin so the
+  // panel always fits and "保存" button stays reachable. SM_CXFULLSCREEN /
+  // SM_CYFULLSCREEN report the maximized client area (work area minus
+  // taskbar), which is what we want here.
+  {
+    int sw = GetSystemMetrics(SM_CXFULLSCREEN);
+    int sh = GetSystemMetrics(SM_CYFULLSCREEN);
+    int want_w = 700, want_h = 786;
+    if (sw > 0 && want_w > sw - 80) want_w = sw - 80;
+    if (sh > 0 && want_h > sh - 80) want_h = sh - 80;
+    if (want_w < 480) want_w = 480;
+    if (want_h < 520) want_h = 520;
+    w.set_size(want_w, want_h, WEBVIEW_HINT_NONE);
+  }
+  w.set_size(480, 520, WEBVIEW_HINT_MIN);
 
   // ─── Native bridge ────────────────────────────────────────
   w.bind("nativeReadLang", [](const std::string& /*args*/) -> std::string {

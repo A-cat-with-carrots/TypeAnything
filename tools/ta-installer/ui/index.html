@@ -92,6 +92,24 @@
     </div>
   </section>
 
+  <!-- Step 3 (reboot variant): pending-on-reboot writes happened. -->
+  <section class="page" id="page-done-reboot" hidden>
+    <p class="eyebrow">INSTALLED — REBOOT REQUIRED</p>
+    <h1>装好了 — <span class="accent">但需要重启电脑生效</span></h1>
+    <p class="sub">
+      部分文件被运行中的旧版锁定，已排队替换。重启后新版自动生效。
+    </p>
+
+    <p class="legal">
+      不重启也能用旧版输入法，但新功能 / 修复需要重启才能加载。
+    </p>
+
+    <div class="actions">
+      <button class="btn ghost" id="btnRebootLater">稍后重启</button>
+      <button class="btn primary" id="btnRebootNow">立即重启</button>
+    </div>
+  </section>
+
 </main>
 
 <div id="toast" class="toast" hidden></div>

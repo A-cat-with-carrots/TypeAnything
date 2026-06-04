@@ -43,7 +43,18 @@ window.installerStatus = function (json) {
     $("progressMsg").textContent = verb + "失败：" + p.error;
     appendLog(p.error, "error");
   }
-  if (p.done)  { setTimeout(() => showPage("done"), 500); }
+  if (p.done) {
+    // needs_reboot=true means MoveFileEx pending-on-reboot writes queued
+    // one or more locked DLLs (typically weaselx64.dll while the old
+    // server is still running). The new bits don't actually take effect
+    // until the user reboots, so swap to a honest "needs reboot" page
+    // instead of the regular success page that links to model config.
+    if (p.needs_reboot) {
+      setTimeout(() => showPage("done-reboot"), 500);
+    } else {
+      setTimeout(() => showPage("done"), 500);
+    }
+  }
 };
 
 let installDir = "";
@@ -109,6 +120,26 @@ window.addEventListener("DOMContentLoaded", async () => {
     try { await window.nativeOpenSettings("model"); } catch (e) {}
     setTimeout(() => window.nativeClose(), 400);
   });
+
+  // Reboot-required done page (only reachable when needs_reboot=true).
+  const btnRebootLater = $("btnRebootLater");
+  const btnRebootNow   = $("btnRebootNow");
+  if (btnRebootLater) {
+    btnRebootLater.addEventListener("click", () => window.nativeClose());
+  }
+  if (btnRebootNow) {
+    btnRebootNow.addEventListener("click", async () => {
+      btnRebootNow.disabled = true;
+      btnRebootNow.textContent = "正在重启 …";
+      try { await window.nativeRebootNow(); } catch (e) {}
+      // If ExitWindowsEx returned false (privilege denied / app vetoed),
+      // we end up back here — re-enable so the user can dismiss.
+      setTimeout(() => {
+        btnRebootNow.disabled = false;
+        btnRebootNow.textContent = "立即重启";
+      }, 4000);
+    });
+  }
 
   if (MODE === "uninstall") {
     $("btnUninstCancel").addEventListener("click", () => window.nativeClose());
