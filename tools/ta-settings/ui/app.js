@@ -120,19 +120,24 @@ async function initLangPage() {
   // Clicking puts the cursor at the leftmost position — nothing to delete.
   const DEFAULT_ALIASES = new Set(["en", "english", "english "]);
   let currentLangValue = "";
+  let currentCategory = "";
   try {
     const cur = await window.nativeReadLang();
     currentLangValue = (cur || "").trim();
     // Strip the "X:" category prefix written by save() (X = A/B/C/D) so the
-    // input shows only the human label.
-    if (/^[ABCD]:/.test(currentLangValue)) {
-      currentLangValue = currentLangValue.slice(2).trim();
+    // input shows only the human label, but remember the category so an
+    // unmodified save() can re-emit it without another classify call.
+    const m = /^([ABCD]):(.*)$/.exec(currentLangValue);
+    if (m) {
+      currentCategory = m[1];
+      currentLangValue = m[2].trim();
     }
     if (currentLangValue && !DEFAULT_ALIASES.has(currentLangValue.toLowerCase())) {
       // Show "无" instead of "off" — friendlier UI label.
       input.value = currentLangValue.toLowerCase() === "off"
                       ? "无"          // 无
                       : currentLangValue;
+      if (currentCategory) input.dataset.category = currentCategory;
     }
   } catch (e) {}
 
@@ -179,9 +184,19 @@ async function initLangPage() {
     });
   }
 
-  // Click chip → fill input.
+  // Each chip carries (or inherits from its .chips group) data-category =
+  // A|B|C|D. When the user clicks a chip we stash that letter on the input
+  // element so save() can skip the classify LLM call entirely — which lets
+  // a freshly-installed user pick a chip preset and save it BEFORE they've
+  // entered their API key. Free-form typed input still has to go through
+  // classify (we have no way to know the category up front).
+  function chipCategory(chip) {
+    return chip.dataset.category ||
+           (chip.closest(".chips") || {}).dataset?.category || "";
+  }
   function clearChipActive() {
     document.querySelectorAll(".chip.active").forEach(x => x.classList.remove("active"));
+    delete input.dataset.category;
   }
   document.querySelectorAll(".chip").forEach(c => {
     c.addEventListener("click", () => {
@@ -191,9 +206,12 @@ async function initLangPage() {
       input.setSelectionRange(n, n);
       clearChipActive();
       c.classList.add("active");
+      const cat = chipCategory(c);
+      if (cat) input.dataset.category = cat;
     });
   });
-  // Any manual edit invalidates the chip "selected" state.
+  // Any manual edit invalidates the chip "selected" state — including the
+  // pre-classified category — so the next save() falls back to classify.
   input.addEventListener("input", clearChipActive);
   input.addEventListener("focus", () => {
     const v = input.value.trim();
@@ -230,8 +248,19 @@ async function initLangPage() {
         toast("已保存", "ok");
         return;
       }
-      // Classify the target into A/B/C/D via one LLM call, then store as
-      // "X:name" so the plugin picks the right category prompt at Enter.
+      // Chip path — input.dataset.category is set when the current value
+      // came from a preset chip click (cleared on any manual edit). Use
+      // that letter directly and skip the LLM call so users without an
+      // API key can still save preset styles.
+      const presetCat = input.dataset.category;
+      if (presetCat && "ABCD".includes(presetCat)) {
+        await window.nativeWriteLang(presetCat + ":" + v);
+        toast("已保存", "ok");
+        return;
+      }
+      // Free-form input — classify via one LLM call, store as "X:name" so
+      // the plugin picks the right category prompt at Enter. On failure
+      // we keep the old lang.txt; we don't silently default to a guess.
       const orig = saveBtn.textContent;
       saveBtn.textContent = "分类中…";
       const r = await window.nativeClassifyLang(v);

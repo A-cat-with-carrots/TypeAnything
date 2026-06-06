@@ -578,7 +578,9 @@ static bool StartShown(const fs::path& exe) {
 // the elevated installer lacks SE_IMPERSONATE_NAME (rare). Caller should
 // fall back to a normal CreateProcessW.
 
-static bool StartDeElevated(const fs::path& exe_path) {
+static bool StartDeElevatedArgs(const fs::path& exe_path,
+                                const std::wstring& args,
+                                bool wait_for_exit) {
   HWND hShell = GetShellWindow();
   if (!hShell) return false;
 
@@ -606,6 +608,10 @@ static bool StartDeElevated(const fs::path& exe_path) {
   STARTUPINFOW si{}; si.cb = sizeof(si);
   PROCESS_INFORMATION pi{};
   std::wstring cmd = L"\"" + exe_path.wstring() + L"\"";
+  if (!args.empty()) {
+    cmd.push_back(L' ');
+    cmd += args;
+  }
 
   ok = CreateProcessWithTokenW(hPriToken, 0, nullptr, cmd.data(),
                                 CREATE_NEW_PROCESS_GROUP, nullptr,
@@ -613,8 +619,15 @@ static bool StartDeElevated(const fs::path& exe_path) {
   CloseHandle(hPriToken);
   if (!ok) return false;
 
+  if (wait_for_exit) {
+    WaitForSingleObject(pi.hProcess, 8000);
+  }
   CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
   return true;
+}
+
+static bool StartDeElevated(const fs::path& exe_path) {
+  return StartDeElevatedArgs(exe_path, L"", false);
 }
 
 // ─── Cold-register TSF DLL ──────────────────────────────────────
@@ -1207,6 +1220,7 @@ static void DoInstall(InstallOptions opts) {
       {MAKEINTRESOURCEW(IDR_DATA_SYMBOLS),       L"symbols.yaml"},
       {MAKEINTRESOURCEW(IDR_DATA_PUNCTUATION),   L"punctuation.yaml"},
       {MAKEINTRESOURCEW(IDR_DATA_KEY_BINDINGS),  L"key_bindings.yaml"},
+      {MAKEINTRESOURCEW(IDR_DATA_WEASEL_YAML),   L"weasel.yaml"},
     };
     int missing = 0;
     for (auto& d : data_files) {
@@ -1559,7 +1573,7 @@ static void DoInstall(InstallOptions opts) {
                    " copy_ec=" + std::to_string(ec.value()));
 
     // 31. Add/Remove Programs entry.
-    WriteUninstallRegistry(wdir, L"0.8.0");
+    WriteUninstallRegistry(wdir, L"0.8.1");
     InstallLog("31. write Uninstall registry",
                "ok (HKLM\\...\\Uninstall\\TypeAnything)");
   }
@@ -1579,6 +1593,33 @@ static void DoInstall(InstallOptions opts) {
       PushStatus(98, "开始菜单快捷方式创建失败（不影响主功能）",
                  "Start Menu lnk 失败（warning）", "warning");
     }
+  }
+
+  // 32b. Add TIP to the *current user's* input language list (issue #13).
+  //
+  // The HKLM CTF\TIP registration above makes the IME visible to TSF
+  // system-wide, but Win+Space picks from HKCU's enabled-input-methods
+  // list — which is empty for our TIP until we call
+  // input.dll!InstallLayoutOrTip as the interactive user. We ourselves
+  // run elevated, so HKCU here points at the admin profile, NOT the
+  // user who launched us. Spawn ta-settings.exe --register-ime via the
+  // shell-user token to hit the right hive.
+  {
+    fs::path ta_set = wdir / L"ta-settings.exe";
+    bool ime_ok = false;
+    if (fs::exists(ta_set)) {
+      ime_ok = StartDeElevatedArgs(ta_set, L"--register-ime", true);
+    }
+    InstallLog("32b. add IME to user language list",
+               std::string(ime_ok ? "ok " : "warning ") +
+                   "ta-settings_exists=" +
+                   (fs::exists(ta_set) ? "yes" : "no"));
+    PushStatus(99,
+               ime_ok ? "已添加到输入法列表"
+                      : "已注册系统组件（用户输入法可能需手动添加）",
+               ime_ok ? "InstallLayoutOrTip ok"
+                      : "InstallLayoutOrTip not invoked (warning)",
+               ime_ok ? "done" : "warning");
   }
 
   // 33. Final status.

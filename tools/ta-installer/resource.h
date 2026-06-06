@@ -33,6 +33,10 @@
 #define IDR_DATA_SYMBOLS       5005
 #define IDR_DATA_PUNCTUATION   5006
 #define IDR_DATA_KEY_BINDINGS  5007
+// weasel.yaml — base panel/style template (issue #14). Without this,
+// WeaselDeployer can't produce build\weasel.yaml and the candidate window
+// renders at ~0px on high-DPI screens.
+#define IDR_DATA_WEASEL_YAML   5008
 
 // 4-category + classify prompts (UTF-8). Deployed to %APPDATA%\Rime\.
 #define IDR_PROMPTS_TXT        6001

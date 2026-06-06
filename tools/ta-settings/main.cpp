@@ -734,7 +734,48 @@ static LRESULT CALLBACK TaSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
   return CallWindowProcW(g_original_wndproc, hwnd, msg, wp, lp);
 }
 
+// One-shot helper: install the TypeAnything TIP into the *current user's*
+// input language list via input.dll!InstallLayoutOrTip. ta-installer runs
+// elevated and writes the machine-wide HKLM CTF\TIP registration, but the
+// per-user "show in Win+Space" mapping lives in HKCU and must be set as
+// the interactive user. The installer therefore calls back into us with
+// `--register-ime` via CreateProcessWithTokenW(shell-user-token), and we
+// just touch the API + exit.
+//
+// Layout string format: "<langid>:{TIP-CLSID}{LANG-PROFILE-GUID}".
+//   0804 = zh-CN.
+//   {A3F4CDED-...} = TypeAnything TIP CLSID (matches installer & WeaselTSF).
+//   {3D02CAB6-...} = TypeAnything LanguageProfile GUID.
+static int RegisterImeForCurrentUser() {
+  HMODULE h = LoadLibraryW(L"input.dll");
+  if (!h) return 1;
+  typedef BOOL (WINAPI *InstallLayoutOrTipFn)(LPCWSTR, DWORD);
+  auto fn = (InstallLayoutOrTipFn)GetProcAddress(h, "InstallLayoutOrTip");
+  if (!fn) { FreeLibrary(h); return 1; }
+  BOOL ok = fn(
+      L"0804:{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}"
+      L"{3D02CAB6-2B8E-4781-BA20-1C9267529467}",
+      0);
+  FreeLibrary(h);
+  return ok ? 0 : 1;
+}
+
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+  // Headless mode — install IME profile into the current user's HKCU and
+  // exit. Triggered by ta-installer near the end of install (issue #13).
+  {
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    bool register_ime = false;
+    if (argv) {
+      for (int i = 1; i < argc; ++i) {
+        if (wcscmp(argv[i], L"--register-ime") == 0) { register_ime = true; break; }
+      }
+      LocalFree(argv);
+    }
+    if (register_ime) return RegisterImeForCurrentUser();
+  }
+
   std::string page = GetPageArg();
 
   // Single-instance check. If another ta-settings is already running,
@@ -1050,6 +1091,45 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
                  SWP_NOACTIVATE | SWP_FRAMECHANGED);
+  }
+
+  // Clamp the OUTER window rect to the work area (issue #10).
+  //
+  // set_size() above sizes the client area, but our non-client frame
+  // (WS_THICKFRAME borders + the 1px DWM top frame) inflates the outer
+  // rect by ~14x39 px, so the panel can still overshoot a small-screen
+  // work area even after the SM_CXFULLSCREEN-based clamp. Measure the
+  // ACTUAL outer rect now and re-clamp + reposition.
+  //
+  // Reference: hrdAI3's #10 reopen — on 1536x864 @ 125% DPI, work area
+  // was 1536x816 and the outer rect came out 714x823, 84 px below the
+  // bottom. SystemParametersInfo(SPI_GETWORKAREA, ...) is the correct
+  // source (it subtracts the taskbar); SM_CYFULLSCREEN returned the
+  // wrong number here because it reports the maximized CLIENT area for
+  // a window with a regular caption, not a frameless WS_THICKFRAME one.
+  {
+    RECT wa{};
+    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0) && wa.right > wa.left
+        && wa.bottom > wa.top) {
+      const int MARGIN = 24;
+      int max_w = (wa.right - wa.left) - MARGIN;
+      int max_h = (wa.bottom - wa.top) - MARGIN;
+      RECT cur{};
+      GetWindowRect(hwnd, &cur);
+      int outer_w = cur.right - cur.left;
+      int outer_h = cur.bottom - cur.top;
+      if (outer_w > max_w) outer_w = max_w;
+      if (outer_h > max_h) outer_h = max_h;
+      if (outer_w < 480) outer_w = 480;
+      if (outer_h < 520) outer_h = 520;
+      int x = cur.left, y = cur.top;
+      if (x < wa.left) x = wa.left;
+      if (y < wa.top)  y = wa.top;
+      if (x + outer_w > wa.right)  x = wa.right  - outer_w;
+      if (y + outer_h > wa.bottom) y = wa.bottom - outer_h;
+      SetWindowPos(hwnd, nullptr, x, y, outer_w, outer_h,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+    }
   }
 
   // Force the new window to the foreground. When WeaselServer (MEDIUM IL,

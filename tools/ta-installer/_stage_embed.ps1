@@ -56,6 +56,10 @@ StageDataFile "essay.txt"
 StageDataFile "symbols.yaml"
 StageDataFile "punctuation.yaml"
 StageDataFile "key_bindings.yaml"
+# weasel.yaml — base panel/style template. Without this on a cold machine,
+# WeaselDeployer cannot produce build\weasel.yaml and the candidate window
+# renders at ~0px on high-DPI screens (issue #14).
+StageDataFile "weasel.yaml"
 
 # 6b. OpenCC data — required by the schema's simplifier@simplification_filter
 #     (opencc_config: t2s.json). Without these the simplifier fails to load,
