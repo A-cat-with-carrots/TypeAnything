@@ -1007,6 +1007,25 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         //  - LLM tends to put its final answer last (e.g. "Type: A", "Category: B").
         //  - Word-leading capitals (e.g. "Answer", "Category") used to false-match.
         std::string content = ExtractContent(resp);
+        // Strip reasoning/thinking segments. DeepSeek-R1, 智谱 GLM-Think,
+        // 豆包-thinking and similar emit `<think>…</think>` (or
+        // `<thinking>…</thinking>`) before the final answer. The back-scan
+        // for A/B/C/D would otherwise hit a random capital letter inside
+        // the reasoning trace. Also strip markdown code fences.
+        {
+          auto strip_block = [&content](const std::string& open,
+                                        const std::string& close) {
+            size_t p = 0;
+            while ((p = content.find(open, p)) != std::string::npos) {
+              size_t e = content.find(close, p + open.size());
+              if (e == std::string::npos) { content.erase(p); break; }
+              content.erase(p, e + close.size() - p);
+            }
+          };
+          strip_block("<think>",     "</think>");
+          strip_block("<thinking>",  "</thinking>");
+          strip_block("```",         "```");
+        }
         rec.parsed = content;
         for (auto it = content.rbegin(); it != content.rend(); ++it) {
           char c = *it;

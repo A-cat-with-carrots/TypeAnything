@@ -33,7 +33,9 @@ Examples:
 
 Output ONE letter only: A, B, C, or D.
 No JSON. No quotes. No explanation. No prefix like "Type:" or "Category:".
-Just the single letter.
+No reasoning, no thinking, no <think> tags. No chain-of-thought.
+No markdown, no code fences.
+Just the single letter. Reply with exactly 1 character.
 ===A===
 Translate the user's Chinese into fluent, idiomatic {LANG}.
 
